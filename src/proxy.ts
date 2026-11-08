@@ -424,7 +424,54 @@ export class McpDecryptingProxy {
     /**
      * Forward a JSON-RPC request to the remote Aionda Mail MCP server
      */
+    /** JSON-RPC-Fehlercode des Servers für eine ungültige oder abgelaufene Sitzung. */
+    private static readonly SESSION_INVALID_CODE = -32000;
+
+    /**
+     * Anfrage an den Server; bei verlorener Sitzung einmal neu anmelden und wiederholen.
+     *
+     * 🚩 Gemessen 08.11.2026: Der Server hält höchstens 10 Sitzungen je
+     * MCP-Schlüssel (McpSessionService::MAX_SESSIONS_PER_EMP) und schließt bei
+     * der elften die ÄLTESTE. Ein zweiter Rechner, ein Testlauf oder ein Neustart
+     * an anderer Stelle verdrängt so die Sitzung eines laufenden Agenten - und
+     * jeder weitere Aufruf endete mit „Invalid or expired session“, bis man den
+     * Agenten neu startete. Nach 24 h läuft die Sitzung ohnehin ab.
+     * Die Schlüssel bleiben dabei im Speicher; neu ist nur die Sitzungskennung.
+     */
     private async forwardToServer(request: JsonRpcRequest): Promise<JsonRpcResponse> {
+        const response = await this.sendToServer(request);
+        if (request.method === 'initialize' || !this.isSessionLost(response)) {
+            return response;
+        }
+
+        process.stderr.write('[proxy] MCP session lost, re-initializing once\n');
+        this.sessionId = null;
+        const initResp = await this.sendToServer({
+            jsonrpc: '2.0', id: 0, method: 'initialize',
+            params: {
+                protocolVersion: '2025-03-26',
+                capabilities: {},
+                clientInfo: { name: '@aiondadotcom/mail-mcp-client', version: '0.16.0' },
+            },
+        });
+        if (initResp.error) {
+            return response;
+        }
+        await this.sendToServer({ jsonrpc: '2.0', method: 'notifications/initialized' });
+        return this.sendToServer(request);
+    }
+
+    /**
+     * Ist das die Antwort „Sitzung ungültig oder abgelaufen“?
+     */
+    private isSessionLost(response: JsonRpcResponse): boolean {
+        const error = response.error;
+        return !!error
+            && error.code === McpDecryptingProxy.SESSION_INVALID_CODE
+            && /session/i.test(error.message ?? '');
+    }
+
+    private async sendToServer(request: JsonRpcRequest): Promise<JsonRpcResponse> {
         const headers: Record<string, string> = {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${this.apiKey}`,
