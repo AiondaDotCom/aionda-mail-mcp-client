@@ -199,3 +199,20 @@ describe('throwOnServerError', () => {
         expect(() => throwOnServerError({ jsonrpc: '2.0', result: { content: [] } })).not.toThrow();
     });
 });
+
+describe('search_emails: nicht entschlüsselbarer PDF-Anhang', () => {
+    it('wird übersprungen, ohne die Suche abzubrechen', async () => {
+        const { email, mailKey } = await derivedEmail(vault, 'p', { subject: 'Post', from: 'f', to: 't', bodyText: 'nichts' }, { has_attachments: true });
+        const full = { ...email, attachments: [{ uuid: 'a', size_bytes: 1, wrapped_ephemeral_key: '__DERIVED_KEY_ENCRYPTED__',
+            encrypted_filename: await phpFieldHex('a.pdf', mailKey), encrypted_mimetype: await phpFieldHex('application/pdf', mailKey) }] };
+        const fremd = (await makeVault()).masterKey;
+        const att = { uuid: 'a', email_uuid: 'p', wrapped_ephemeral_key: '__DERIVED_KEY_ENCRYPTED__',
+            encrypted_filename: await phpFieldHex('a.pdf', fremd), encrypted_content: await phpFieldHex('Treffer', fremd) };
+        const calls = fakeServer((name) => (name === 'list_emails' ? { emails: [email] } : name === 'read_email' ? full : att));
+
+        const { data, isError } = await search(newProxy(), { query: 'treffer', folders: ['inbox'] });
+        expect(isError).toBe(false);
+        expect(data.total_matched).toBe(0);
+        expect(calls.map(c => c.name)).toEqual(['list_emails', 'read_email', 'get_attachment', 'read_email']);
+    });
+});

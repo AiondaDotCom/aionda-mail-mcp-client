@@ -464,3 +464,42 @@ describe('Durchreichen ohne Eingriff', () => {
         expect(calls).toEqual(['https://a.test/mcp', 'https://b.test/mcp']);
     });
 });
+
+describe('Ränder der Schlüsselsuche', () => {
+    it('rewrapped_key ohne passende Freigabe oder ohne Ordner: der eigene Schlüssel öffnet die Mail', async () => {
+        const a = await kemEmail(vault, 'm-a', { subject: 'Eigene A', from: 'f', to: 't' });
+        Object.assign(a.email, { folder_uuid: 'unbekannt', rewrapped_key: 'eA==', key_nonce: 'eA==' });
+        const b = await kemEmail(vault, 'm-b', { subject: 'Eigene B', from: 'f', to: 't' });
+        Object.assign(b.email, { folder_uuid: null, rewrapped_key: 'eA==', key_nonce: 'eA==' });
+        const calls = fakeServer((name) => (name === 'list_folders' ? { shared_folders: { incoming: [{ folder_uuid: 'anderer' }] } } : { emails: [a.email, b.email] }));
+
+        const data = payloadOf(await newProxy().handleRequest(toolCall('list_emails')));
+
+        expect((data.emails as Record<string, unknown>[]).map(e => e.subject)).toEqual(['Eigene A', 'Eigene B']);
+        expect(calls.filter(c => c.name === 'list_folders')).toHaveLength(1);
+    });
+
+    it('gepolsterter Kalendername wird ausgepackt', async () => {
+        const calKey = rnd(32);
+        const name = bucketPad(utf8('Team'));
+        const cal = {
+            uuid: 'c', encrypted_calendar_key: toBase64(await encryptVaultData(calKey, vault.masterKey)),
+            encrypted_name: toBase64(await encryptPhpAesGcm(name, calKey)),
+        };
+        fakeServer(() => ({ calendars: [cal] }));
+        const data = payloadOf(await newProxy().handleRequest(toolCall('list_calendars')));
+        expect((data.calendars as Record<string, unknown>[])[0].name).toBe('Team');
+    });
+
+    it('Anhang aus geteiltem Ordner, aber die Mail ist nicht lesbar: bleibt verschlüsselt', async () => {
+        const attUuid = `att-${toHex(rnd(4))}`;
+        const att = {
+            uuid: attUuid, email_uuid: 'm-q', wrapped_ephemeral_key: '__DERIVED_KEY_ENCRYPTED__',
+            encrypted_filename: await phpFieldHex('x', rnd(32)), encrypted_content: await phpFieldHex('x', rnd(32)),
+        };
+        const calls = fakeServer((name) => (name === 'get_attachment' ? att : { __raw: { content: [] } }));
+        const data = payloadOf(await newProxy().handleRequest(toolCall('get_attachment', { attachment_uuid: attUuid })));
+        expect(data).toEqual(att);
+        expect(calls.map(c => c.name)).toEqual(['get_attachment', 'read_email']);
+    });
+});
