@@ -325,8 +325,7 @@ What it cannot protect against, and why:
   manager's master password. Revoking the MCP key in Settings cuts off access
   immediately.
 
-Found something? Please report it privately via
-[GitHub security advisories](https://github.com/AiondaDotCom/aionda-mail-mcp-client/security/advisories/new)
+Found something? Please report it privately as described in [SECURITY.md](SECURITY.md)
 instead of opening a public issue.
 
 ---
