@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { webcrypto } from 'node:crypto';
-import { decryptEmail } from '../../src/crypto/email-decryptor';
+import { decryptEmail, resolveContentKey } from '../../src/crypto/email-decryptor';
 import type { VaultPrivateKeys } from '../../src/crypto/email-decryptor';
 import type { EncryptedEmail } from '../../src/types/email';
 import { toHex } from '../../src/crypto/encoding';
@@ -137,6 +137,61 @@ describe('Email Decryptor', () => {
             } as EncryptedEmail;
 
             await expect(decryptEmail(email, masterKey, dummyPrivateKeys)).rejects.toThrow();
+        });
+    });
+    // Codex-Review 08.11.2026 (#c2fb3967)
+    describe('Schlüsselherkunft und geteilte Ordner', () => {
+        const dummyPrivateKeys: VaultPrivateKeys = {
+            x25519PrivateKey: new Uint8Array(32),
+            mlKemPrivateKey: new Uint8Array(3168),
+        };
+
+        it('meldet bei Altmails den Master-Key als Herkunft, damit er nie weitergegeben wird', async () => {
+            const masterKey = new Uint8Array(32).fill(7);
+            const master = await resolveContentKey('__MASTER_KEY_ENCRYPTED__', 'u', masterKey, dummyPrivateKeys);
+            const derived = await resolveContentKey('__DERIVED_KEY_ENCRYPTED__', 'u', masterKey, dummyPrivateKeys);
+
+            expect(master.source).toBe('master');
+            expect(master.key).toEqual(masterKey);
+            expect(derived.source).toBe('derived');
+            expect(derived.key).not.toEqual(masterKey);
+        });
+
+        it('öffnet Anhänge einer geteilten Mail mit dem Mail-Schlüssel, nicht mit dem Master-Key des Empfängers', async () => {
+            const ownerMaster = new Uint8Array(32).fill(1);
+            const recipientMaster = new Uint8Array(32).fill(2);
+            const uuid = '123e4567-e89b-12d3-a456-426614174000';
+            const mailKey = await deriveEmailKey(ownerMaster, uuid);
+
+            const email = {
+                uuid,
+                dea_id: 1,
+                encrypted_subject: await encryptField('geteilt', mailKey),
+                encrypted_from: await encryptField('a@example.com', mailKey),
+                encrypted_to: await encryptField('b@example.com', mailKey),
+                wrapped_ephemeral_key: '__DERIVED_KEY_ENCRYPTED__',
+                ephemeral_key_iv: '',
+                size_bytes: 1,
+                has_attachments: true,
+                attachment_count: 1,
+                is_read: false,
+                is_starred: false,
+                is_deleted: false,
+                folder_type: 'inbox',
+                received_at: '2026-11-08T00:00:00Z',
+                attachments: [{
+                    uuid: 'att-1',
+                    encrypted_filename: await encryptField('plan.pdf', mailKey),
+                    encrypted_mimetype: await encryptField('application/pdf', mailKey),
+                    wrapped_ephemeral_key: '__DERIVED_KEY_ENCRYPTED__',
+                    size_bytes: 1,
+                }],
+            } as EncryptedEmail;
+
+            const decrypted = await decryptEmail(email, recipientMaster, dummyPrivateKeys, mailKey);
+
+            expect(decrypted.subject).toBe('geteilt');
+            expect(decrypted.attachments?.[0]?.filename).toBe('plan.pdf');
         });
     });
 });

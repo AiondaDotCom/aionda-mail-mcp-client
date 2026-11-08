@@ -127,6 +127,19 @@ export async function decryptWrappedKey(
 }
 
 /**
+ * Ergebnis von resolveContentKey().
+ *
+ * `source` sagt, WAS `key` ist. Bei `'master'` ist es der Master-Key des
+ * Postfachs selbst - der darf nie an einen anderen Menschen weitergegeben
+ * werden (Codex-Review 08.11.2026, #c2fb3967).
+ */
+export interface ResolvedContentKey {
+    key: Uint8Array;
+    clientEncrypted: boolean;
+    source: 'derived' | 'master' | 'kem';
+}
+
+/**
  * Den Schlüssel bestimmen, der Inhalt und Anhänge einer Mail öffnet.
  *
  * Die EINZIGE Stelle im Client, die `wrapped_ephemeral_key` auswertet -
@@ -143,15 +156,15 @@ export async function resolveContentKey(
     emailUuid: string,
     masterKey: Uint8Array,
     privateKeys: VaultPrivateKeys
-): Promise<{ key: Uint8Array; clientEncrypted: boolean }> {
+): Promise<ResolvedContentKey> {
     if (isDerivedKeyMarker(wrappedKey)) {
-        return { key: await deriveEmailKey(masterKey, emailUuid), clientEncrypted: true };
+        return { key: await deriveEmailKey(masterKey, emailUuid), clientEncrypted: true, source: 'derived' };
     }
     if (isClientEncrypted(wrappedKey)) {
-        return { key: masterKey, clientEncrypted: true };
+        return { key: masterKey, clientEncrypted: true, source: 'master' };
     }
     const wrapped = parseWrappedKey(fromHex(wrappedKey));
-    return { key: await decryptWrappedKey(wrapped, privateKeys), clientEncrypted: false };
+    return { key: await decryptWrappedKey(wrapped, privateKeys), clientEncrypted: false, source: 'kem' };
 }
 
 /**
@@ -254,9 +267,12 @@ export async function decryptEmail(
     if (email.attachments && email.attachments.length > 0) {
         attachments = await Promise.all(
             email.attachments.map(async (att: EncryptedAttachment) => {
-                const { key: attKey, clientEncrypted: attClientEnc } = await resolveContentKey(
-                    att.wrapped_ephemeral_key, email.uuid, masterKey, privateKeys
-                );
+                // In einer geteilten Ansicht gehört der Anhang zum Schlüssel
+                // der MAIL, den der Ordnerschlüssel geliefert hat - nicht zu
+                // einer Ableitung aus dem Master-Key des Empfängers.
+                const { key: attKey, clientEncrypted: attClientEnc } = preDecryptedEphemeralKey
+                    ? { key: preDecryptedEphemeralKey, clientEncrypted: true }
+                    : await resolveContentKey(att.wrapped_ephemeral_key, email.uuid, masterKey, privateKeys);
                 const attDecryptFn = (hex: string): Promise<string> =>
                     decryptFieldBytes(fromHex(hex), attKey, attClientEnc)
                         .then((bytes) => new TextDecoder().decode(bytes));

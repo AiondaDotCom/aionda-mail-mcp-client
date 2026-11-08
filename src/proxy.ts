@@ -1185,6 +1185,22 @@ export class McpDecryptingProxy {
     }
 
     /**
+     * Mail-Schlüssel einer Mail aus einem geteilten Ordner holen (über deren
+     * rewrapped_key und den Ordnerschlüssel). null, wenn es keine ist.
+     */
+    private async sharedFolderKeyForEmail(emailUuid: string): Promise<Uint8Array | null> {
+        if (!emailUuid) return null;
+        const resp = await this.forwardToServer({
+            jsonrpc: '2.0', id: 0, method: 'tools/call',
+            params: { name: 'read_email', arguments: { email_uuid: emailUuid } },
+        });
+        const raw = this.parseToolContent(resp);
+        const email = ((raw?.data as Record<string, unknown> | undefined) ?? raw) as Record<string, unknown> | null;
+        if (!email) return null;
+        return this.getSharedFolderEphemeralKey(email);
+    }
+
+    /**
      * Decrypt attachment fields (filename, content, mimetype)
      */
     private async tryDecryptAttachment(att: Record<string, unknown>): Promise<Record<string, unknown>> {
@@ -1193,7 +1209,7 @@ export class McpDecryptingProxy {
             // #c2fb3967 - eine Stelle für alle Kapselarten, auch den
             // abgeleiteten Mail-Schlüssel. Anhänge benutzen den Schlüssel
             // IHRER Mail, deshalb `email_uuid`.
-            const { key: decryptionKey, clientEncrypted } = await resolveContentKey(
+            let { key: decryptionKey, clientEncrypted } = await resolveContentKey(
                 att.wrapped_ephemeral_key as string,
                 att.email_uuid as string,
                 this.masterKey,
@@ -1201,6 +1217,22 @@ export class McpDecryptingProxy {
             );
             const decryptAttField = (hex: string): Promise<Uint8Array> =>
                 decryptFieldBytes(fromHex(hex), decryptionKey, clientEncrypted);
+
+            // Anhang aus einem geteilten Ordner: Er gehört zum Schlüssel der
+            // Mail des EIGENTÜMERS, den nur der Ordnerschlüssel liefert. Der
+            // Server legt dafür kein Material an den Anhang; es kommt über die
+            // Mail. AES-GCM ist authentifiziert - der erste Versuch scheitert
+            // laut, er kann nicht falsch „gelingen".
+            if (att.encrypted_filename) {
+                try {
+                    await decryptAttField(att.encrypted_filename as string);
+                } catch (ownKeyError) {
+                    const sharedKey = await this.sharedFolderKeyForEmail(att.email_uuid as string);
+                    if (!sharedKey) throw ownKeyError;
+                    decryptionKey = sharedKey;
+                    clientEncrypted = true;
+                }
+            }
 
             // Decrypt filename
             let filename = 'attachment';
@@ -1906,12 +1938,21 @@ export class McpDecryptingProxy {
             // 5. Decrypt the ephemeral key
             // #c2fb3967 - auch der abgeleitete Mail-Schlüssel; vorher wurde
             // er als KEM-Kapsel gelesen und das Einliefern brach ab.
-            const { key: ephemeralKey } = await resolveContentKey(
+            const { key: ephemeralKey, source } = await resolveContentKey(
                 keyData.wrapped_ephemeral_key as string,
                 emailUuid,
                 this.masterKey,
                 this.privateKeys
             );
+            // 🚩 Codex-Review 08.11.2026: Bei einer Altmail ist der „Mail-
+            // Schlüssel" der Master-Key. Ihn für Ordnerempfänger zu verpacken,
+            // gäbe ihnen das ganze Postfach. Lieber ablehnen.
+            if (source === 'master') {
+                throw new Error(
+                    'This e-mail is still encrypted with the vault master key and cannot be shared safely. '
+                    + 'Open it once in the Aionda Mail web app (it is migrated to its own key automatically), then try again.'
+                );
+            }
 
             // 6. Re-wrap ephemeral key with the folder key (AES-GCM)
             const folderAesKey = await webcrypto.subtle.importKey(

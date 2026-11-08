@@ -1,8 +1,18 @@
-# Aionda Mail MCP Client
+<p align="center">
+  <a href="https://aionda.com">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/AiondaDotCom/aionda-mail-mcp-client/main/assets/aionda-logo-white.png">
+      <img alt="Aionda" src="https://raw.githubusercontent.com/AiondaDotCom/aionda-mail-mcp-client/main/assets/aionda-logo-black.png" width="320">
+    </picture>
+  </a>
+</p>
+
+<h1 align="center">Aionda Mail MCP Client</h1>
 
 **Let AI agents work with your end-to-end encrypted mailbox without handing the keys to anyone else.**
 
 [![npm](https://img.shields.io/npm/v/@aiondadotcom/mail-mcp-client.svg)](https://www.npmjs.com/package/@aiondadotcom/mail-mcp-client)
+[![CI](https://github.com/AiondaDotCom/aionda-mail-mcp-client/actions/workflows/ci.yml/badge.svg)](https://github.com/AiondaDotCom/aionda-mail-mcp-client/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 ![Post-quantum](https://img.shields.io/badge/crypto-X25519%20%2B%20ML--KEM--1024-6f42c1)
 
@@ -12,8 +22,10 @@ holds ciphertext and public keys. It never holds the key that opens your mailbox
 This package is the piece that makes that work with AI. It runs **on your own
 machine**, speaks the [Model Context Protocol](https://modelcontextprotocol.io)
 to your agent (Claude Code, Claude Desktop, OpenClaw, Cursor, …) and the Aionda
-Mail MCP API to the server. Everything is decrypted locally, and outgoing
-data is encrypted locally before it leaves.
+Mail MCP API to the server. Everything you read is decrypted locally. Folder
+names, calendar entries and tasks you create are encrypted locally before they
+leave. Mail you **send** and drafts you save go to the server readable, so it
+can deliver them (see [Security model](#security-model-honestly)).
 
 We publish it as open source so you don't have to take that on trust. Read the
 code, run the tests and check the known-answer vectors yourself.
@@ -154,10 +166,14 @@ wrong key or wrong byte layout fails loudly instead of producing garbage.
 
 ## 3. Shared folders without sharing your vault
 
+This is how sharing works in Aionda Mail (the web app sets up the share). The
+proxy takes part when your agent reads a folder someone shared with you, or
+delivers a mail into it with `deliver_to_shared_folder`.
+
 ```mermaid
 sequenceDiagram
     autonumber
-    participant A as 🔐 Alice's proxy
+    participant A as 🔐 Alice's web app
     participant S as ☁️ Server
     participant B as 🔐 Bob's client
 
@@ -252,8 +268,10 @@ Without keys the client is a plain MCP transport and returns ciphertext as-is.
 | Direction | Tool calls | What happens locally |
 |---|---|---|
 | ⬇ Read | `list_emails`, `read_email`, `search_emails`, `get_attachment`, `list_folders`, `list_events`, `list_tasks`, … | Decrypts subjects, bodies, folder names, calendar and task fields; attachments are decrypted to a temp file |
-| ⬆ Write | `create_folder`, `create_event`, `create_task`, `save_draft`, … | Encrypts names and fields before they leave your machine |
-| 🔁 Move | `move_email` into a folder shared by someone else | Re-wraps the message key for that folder with hybrid KEM |
+| ⬆ Write | `create_folder`, `create_event`, `update_event`, `create_task`, `update_task`, `create_task_list` | Encrypts names and fields before they leave your machine |
+| ✉️ Send | `send_email`, `reply_email`, `forward_email`, `save_draft` | Passed to the server **readable**: it has to deliver the mail over SMTP. The stored copy is encrypted by the server |
+| 📥 Deliver | `deliver_to_shared_folder` | Wraps the message key with the folder key; refuses mails that still use the master key |
+| 🔁 Copy | `move_email` from a folder shared with you into your own mailbox | Re-encrypts the message for your own keys (hybrid KEM) |
 | 🔎 Search | `search_emails` | Runs **in the proxy**, so the server never sees your search terms |
 | 📄 Export | `export_email_pdf` | Renders the decrypted mail to PDF locally (headless Chrome) |
 
@@ -270,9 +288,9 @@ Without keys the client is a plain MCP transport and returns ciphertext as-is.
 | MCP key envelope | AES-256-GCM, K = SHA-256(`tmv_…`), AAD binds the key uuid |
 | Size hiding | Bucket padding (256 B … 16 MiB) before encryption |
 
-Post-quantum and elliptic-curve code comes from the audited
-[`@noble`](https://paulmillr.com/noble/) libraries. Everything else uses
-Node's built-in WebCrypto.
+ML-KEM-1024 and HKDF come from the audited
+[`@noble`](https://paulmillr.com/noble/) libraries. X25519, AES-GCM and SHA-256
+use Node's built-in WebCrypto.
 
 ### Known-answer tests
 
@@ -298,8 +316,9 @@ What it cannot protect against, and why:
 
 * **Incoming mail arrives as plaintext.** SMTP delivers it to the server
   unencrypted (unless the sender used PGP); the server encrypts it on receipt.
-* **Mail you send to external recipients** must be readable by the server at
-  send time so it can be delivered over SMTP.
+* **Mail you send and drafts you save through the agent** reach the server
+  readable. Sending needs that for SMTP delivery; for drafts this client does
+  not yet encrypt locally.
 * **Your AI agent sees what you let it read.** If the agent runs on a cloud
   model, that provider processes the decrypted text you pass to it.
 * **Your machine holds the keys.** Treat `AIONDA_VAULT_KEY` like a password
@@ -316,7 +335,7 @@ instead of opening a public issue.
 
 ```bash
 npm install
-npm run build        # ESM + CJS + bundled CLI
+npm run build        # ESM library + bundled CLI
 npm run test:unit      # unit + crypto tests, no network (what CI runs)
 npm run test:coverage  # same, with a coverage report
 npm run lint
