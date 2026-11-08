@@ -19,10 +19,6 @@ Security fixes are released for the latest minor version only.
 Report privately through GitHub:
 [**Report a vulnerability**](https://github.com/AiondaDotCom/aionda-mail-mcp-client/security/advisories/new)
 
-If you cannot use GitHub, write to **contact-46epp9ba@contact.aionda.com**
-(the contact address of the [Security Whitepaper](https://mail.aionda.com/?cmd=security))
-and mention "security" in the subject.
-
 Helpful to include:
 
 - the affected version (`npm ls @aiondadotcom/mail-mcp-client`) and Node.js version,
@@ -48,9 +44,9 @@ Please give us a reasonable time to ship a fix before disclosing details publicl
 - ways for a malicious server or network attacker to make the client accept forged data or downgrade its protection,
 - supply-chain issues in the package or its release process.
 
-**Out of scope here:** the Aionda Mail service, web app and native apps themselves. Please still report such issues to the
-contact address above; they just are not tracked in this repository. Denial-of-service against our servers, spam and social
-engineering are out of scope.
+Security issues in the Aionda Mail service, web app or native apps can be reported the same way, through
+[GitHub](https://github.com/AiondaDotCom/aionda-mail-mcp-client/security/advisories/new); we route them to the right team.
+Denial-of-service against our servers, spam and social engineering are out of scope.
 
 ## Verifying what you install
 
