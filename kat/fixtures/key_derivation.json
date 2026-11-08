@@ -1,0 +1,64 @@
+{
+  "generator": {
+    "source": "@aiondadotcom/mail-mcp-client@0.15.0",
+    "date": "2026-07-27"
+  },
+  "encoding": "input/salt/info/expected lowercase Hex. *_utf8 sind Lesehilfen mit denselben Bytes. kind=sha256_master: expected = SHA-256(input). kind=hkdf: HKDF-SHA-256(ikm=input, salt, info) -> 32 Byte.",
+  "cases": [
+    {
+      "name": "sha256_master_ascii",
+      "kind": "sha256_master",
+      "input": "61696f6e64612d6b61742d7661756c742d6b6579",
+      "input_utf8": "aionda-kat-vault-key",
+      "salt": "",
+      "info": "",
+      "expected": "a9293ba7800de4c59488d56304c2d686862ddf068ba5882f41325d561597f3b1"
+    },
+    {
+      "name": "sha256_master_utf8",
+      "kind": "sha256_master",
+      "input": "5363686cc3bc7373656c2d6d69742dc39c6d6cc3a47574656e2d756e642dc39f2df09f9490",
+      "input_utf8": "Schlüssel-mit-Ümläuten-und-ß-🔐",
+      "salt": "",
+      "info": "",
+      "expected": "43713208367f61f470621f365b16359b41d5df628d205953b4afd565f5681e01"
+    },
+    {
+      "name": "hkdf_folder_key_v1",
+      "kind": "hkdf",
+      "input": "5cab74714089af1c89b2abfec3b91136945e1d7925f0967739dd8e3ff6976f2d",
+      "salt": "74726173686d61696c2d666f6c6465722d6b65792d7631",
+      "salt_utf8": "trashmail-folder-key-v1",
+      "info": "63343266356339382d346135332d346262622d393338392d316563623637653435373764",
+      "info_utf8": "c42f5c98-4a53-4bbb-9389-1ecb67e4577d",
+      "expected": "41ffb19316acdf260bbf5090b875798521a22aff7725c6a2b415e879352f47ab"
+    },
+    {
+      "name": "hkdf_trashmail-tasks-v1",
+      "kind": "hkdf",
+      "input": "5cab74714089af1c89b2abfec3b91136945e1d7925f0967739dd8e3ff6976f2d",
+      "salt": "8b03514cb38748b7427518d8795511b1048f68cbf41945e0b26b26ac1c669d06",
+      "info": "74726173686d61696c2d7461736b732d7631",
+      "info_utf8": "trashmail-tasks-v1",
+      "expected": "a7e8c1a0eaa2e255ccd2a4db3e4adb282b872b66aac898c9e286e49d6c757b71"
+    },
+    {
+      "name": "hkdf_trashmail-contacts-v2",
+      "kind": "hkdf",
+      "input": "5cab74714089af1c89b2abfec3b91136945e1d7925f0967739dd8e3ff6976f2d",
+      "salt": "8b03514cb38748b7427518d8795511b1048f68cbf41945e0b26b26ac1c669d06",
+      "info": "74726173686d61696c2d636f6e74616374732d7632",
+      "info_utf8": "trashmail-contacts-v2",
+      "expected": "48f6d9d0504c1402c25e6e43f0472ab1460084d8ca2887303745f93ad0d29296"
+    },
+    {
+      "name": "hkdf_empty_salt",
+      "kind": "hkdf",
+      "input": "5cab74714089af1c89b2abfec3b91136945e1d7925f0967739dd8e3ff6976f2d",
+      "salt": "",
+      "info": "74726173686d61696c2d7461736b732d7631",
+      "info_utf8": "trashmail-tasks-v1",
+      "expected": "55c39dc060679e345842ed015871d1d7fdadcb5a51cd0302657314bf1ba75e43"
+    }
+  ]
+}

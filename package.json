@@ -1,0 +1,77 @@
+{
+  "name": "@aiondadotcom/mail-mcp-client",
+  "version": "0.16.4",
+  "description": "Zero-knowledge MCP proxy for Aionda Mail: lets AI agents read and write your end-to-end encrypted mailbox while all decryption happens locally (X25519 + ML-KEM-1024).",
+  "author": "Aionda GmbH <stephan.ferraro@aionda.com>",
+  "license": "Apache-2.0",
+  "type": "module",
+  "bin": {
+    "aionda-mail-mcp": "bin/aionda-mail-mcp.js"
+  },
+  "main": "./dist/esm/index.js",
+  "types": "./dist/esm/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/esm/index.d.ts",
+        "default": "./dist/esm/index.js"
+      }
+    }
+  },
+  "files": [
+    "dist/",
+    "bin/",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && npm run build:cli",
+    "build:cli": "npx esbuild src/stdio-server.ts --bundle --platform=node --format=esm --target=node18 --outfile=dist/cli/aionda-mail-mcp.mjs",
+    "test": "vitest run",
+    "generate-kat": "rolldown kat/generate-kat.ts -f esm -p node --no-codeSplitting -o kat/.build/generate-kat.mjs && node kat/.build/generate-kat.mjs",
+    "verify-kat": "rolldown kat/verify-kat.ts -f esm -p node --no-codeSplitting -o kat/.build/verify-kat.mjs && node kat/.build/verify-kat.mjs",
+    "test:watch": "vitest",
+    "lint": "eslint src/",
+    "test:unit": "vitest run --exclude \"tests/integration/**\" --exclude \"kat/**\"",
+    "test:coverage": "vitest run --exclude \"tests/integration/**\" --coverage --coverage.provider=v8 --coverage.include=\"src/**/*.ts\""
+  },
+  "dependencies": {
+    "@noble/hashes": "^1.8.0",
+    "@noble/post-quantum": "^0.5.4",
+    "pdfjs-dist": "^4.9.155",
+    "tesseract.js": "^7.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "@typescript-eslint/eslint-plugin": "^8.46.4",
+    "@typescript-eslint/parser": "^8.46.4",
+    "@vitest/coverage-v8": "^4.1.10",
+    "eslint": "^9.39.1",
+    "typescript": "^5.3.0",
+    "vitest": "^4.1.10"
+  },
+  "homepage": "https://github.com/AiondaDotCom/aionda-mail-mcp-client#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AiondaDotCom/aionda-mail-mcp-client.git"
+  },
+  "bugs": {
+    "url": "https://github.com/AiondaDotCom/aionda-mail-mcp-client/issues"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "email",
+    "end-to-end-encryption",
+    "zero-knowledge",
+    "post-quantum",
+    "ml-kem",
+    "x25519",
+    "aionda",
+    "ai-agents"
+  ]
+}

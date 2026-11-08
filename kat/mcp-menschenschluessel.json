@@ -1,0 +1,112 @@
+{
+    "generator": {
+        "source": "@aiondadotcom/mail-mcp-client@0.16.0",
+        "date": "2026-09-13",
+        "script": "reine WebCrypto-Rechnung (AES-256-GCM, SHA-256), kein Produktivcode"
+    },
+    "encoding": "Alle Binaerfelder sind lowercase Hex ohne Praefix. Felder mit dem Suffix _utf8 sind Lesehilfen und enthalten dieselben Bytes als Text.",
+    "algorithm": {
+        "api_key": "tmmcp_ + base64url(32 Zufallsbytes, ohne Padding). Hash = SHA-256(utf8(text)); der Server speichert die 32 Byte binaer (mcp_personal_key.mcp_token_hash), key_prefix sind die ersten 12 Zeichen.",
+        "vault_key": "tmv_ + base64url(32 Zufallsbytes, ohne Padding). Er ist der Wert der Umgebungsvariable AIONDA_VAULT_KEY.",
+        "wrapping_key": "K = SHA-256(utf8(tmv_-Text)) - dieselbe Ableitung wie beim KI-Mitarbeiter.",
+        "aad": "utf8(\"aionda-mcp-master-key-v1:\" + key_uuid in Kleinbuchstaben)",
+        "wrapped_master_key": "iv(12) || AES-256-GCM(M, K, iv, aad) || tag(16); M ist der 32-Byte-Master-Key des Tresors. Geht das Entpacken nicht auf, ist das ein harter Fehler - kein Rueckfall auf SHA-256(tmv_) als Master Key."
+    },
+    "cases": [
+        {
+            "name": "grundfall",
+            "note": "Feste Zaehlbytes. Der Blob ist iv(12) || ciphertext(32) || tag(16) = 60 Byte.",
+            "vault_key_utf8": "tmv_AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA",
+            "vault_key_random_bytes": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+            "key_uuid": "0f3c4c5e-7a1b-4d2e-9f80-1a2b3c4d5e6f",
+            "aad_utf8": "aionda-mcp-master-key-v1:0f3c4c5e-7a1b-4d2e-9f80-1a2b3c4d5e6f",
+            "aad": "61696f6e64612d6d63702d6d61737465722d6b65792d76313a30663363346335652d376131622d346432652d396638302d316132623363346435653666",
+            "wrapping_key": "443173d50605548a1fb4f98a604a948876aebab703a655466991b6b5e8f1c790",
+            "master_key": "a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebf",
+            "iv": "000102030405060708090a0b",
+            "ciphertext": "a3d4da6a8a4688a21c8b9207e4696952ff408b3d9239fcbb11cc3f022c332700",
+            "tag": "80e94c787f280de44f97d27773628b3d",
+            "wrapped_master_key": "000102030405060708090a0ba3d4da6a8a4688a21c8b9207e4696952ff408b3d9239fcbb11cc3f022c33270080e94c787f280de44f97d27773628b3d"
+        },
+        {
+            "name": "uuid_grossgeschrieben",
+            "note": "Die UUID kommt in Grossbuchstaben an; in die AAD geht sie in Kleinbuchstaben. Wer die Eingabe ungefiltert in die AAD setzt, erzeugt einen anderen Blob.",
+            "vault_key_utf8": "tmv_CzBVep_E6Q4zWH2ix-wRNluApcrvFDleg6jN8hc8YYY",
+            "vault_key_random_bytes": "0b30557a9fc4e90e33587da2c7ec11365b80a5caef14395e83a8cdf2173c6186",
+            "key_uuid": "7B9E2C10-5D4F-4A8B-B2C3-D4E5F6A7B8C9",
+            "aad_utf8": "aionda-mcp-master-key-v1:7b9e2c10-5d4f-4a8b-b2c3-d4e5f6a7b8c9",
+            "aad": "61696f6e64612d6d63702d6d61737465722d6b65792d76313a37623965326331302d356434662d346138622d623263332d643465356636613762386339",
+            "wrapping_key": "30376b60da14f062cb0d23bb8eff16f81b91862bf6726f501ce49e58ce8fe0f2",
+            "master_key": "054e97e02972bb044d96df2871ba034c95de2770b9024b94dd266fb8014a93dc",
+            "iv": "f0efeeedecebeae9e8e7e6e5",
+            "ciphertext": "d7827ade92e8c4a2f266791a75b17c60efd9a6924a8ad5356ce331978cd83df2",
+            "tag": "e372ef1ae10217040158218289331cb6",
+            "wrapped_master_key": "f0efeeedecebeae9e8e7e6e5d7827ade92e8c4a2f266791a75b17c60efd9a6924a8ad5356ce331978cd83df2e372ef1ae10217040158218289331cb6"
+        },
+        {
+            "name": "abgeleitete_werte",
+            "note": "Alle Eingaben sind SHA-256 von Etiketten (kat:mcp-menschenschluessel:tmv|master-key|iv), der IV die ersten 12 Byte.",
+            "vault_key_utf8": "tmv_1CitUnyx94VumzkXTXMFABJY-mpYQqYDjMzghHFzGi0",
+            "vault_key_random_bytes": "d428ad527cb1f7856e9b39174d7305001258fa6a5842a6038ccce08471731a2d",
+            "key_uuid": "c2a1f0e9-8d7c-4b6a-9f5e-4d3c2b1a0f9e",
+            "aad_utf8": "aionda-mcp-master-key-v1:c2a1f0e9-8d7c-4b6a-9f5e-4d3c2b1a0f9e",
+            "aad": "61696f6e64612d6d63702d6d61737465722d6b65792d76313a63326131663065392d386437632d346236612d396635652d346433633262316130663965",
+            "wrapping_key": "5da2f244b01fda587264ac986f2a7fd3c8306c4acdae0df9846c007b2e5365a6",
+            "master_key": "3faa260fba1d1633f8789572c3cff3cf1f847f7411603f04bd8252660b742bbb",
+            "iv": "ddfcd926d682b946af1e2c90",
+            "ciphertext": "5824ec3f49b627bd0366449a33f2f178e26001aa1d5904016e654a6c0a5a3b91",
+            "tag": "893a902cadd77fd89d6ce8dc2ee310e2",
+            "wrapped_master_key": "ddfcd926d682b946af1e2c905824ec3f49b627bd0366449a33f2f178e26001aa1d5904016e654a6c0a5a3b91893a902cadd77fd89d6ce8dc2ee310e2"
+        }
+    ],
+    "api_key_cases": [
+        {
+            "name": "api_zaehlbytes",
+            "api_key_utf8": "tmmcp_QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl8",
+            "api_key_random_bytes": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+            "api_key_hash": "8b8d654e2fc5b082cb3e169c56e21f4e1b5d00ae142f8bbdb188f89fcbf267e5",
+            "key_prefix": "tmmcp_QEFCQ0"
+        },
+        {
+            "name": "api_abgeleitet",
+            "api_key_utf8": "tmmcp_AGuLokjGfdamj5M5wtWX1vZBlrH-1Y6CrllT2LWbJLg",
+            "api_key_random_bytes": "006b8ba248c67dd6a68f9339c2d597d6f64196b1fed58e82ae5953d8b59b24b8",
+            "api_key_hash": "c2f0894742b4ad89ce435b74a514940e321eada96df1b9394569dcc9dcd90f0a",
+            "key_prefix": "tmmcp_AGuLok"
+        }
+    ],
+    "negative_cases": [
+        {
+            "name": "falscher_vault_key",
+            "note": "Letztes Zeichen des tmv_-Textes geaendert.",
+            "vault_key_utf8": "tmv_AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyB",
+            "key_uuid": "0f3c4c5e-7a1b-4d2e-9f80-1a2b3c4d5e6f",
+            "wrapped_master_key": "000102030405060708090a0ba3d4da6a8a4688a21c8b9207e4696952ff408b3d9239fcbb11cc3f022c33270080e94c787f280de44f97d27773628b3d",
+            "expect": "auth_failure"
+        },
+        {
+            "name": "falsche_uuid",
+            "note": "Andere UUID -> andere AAD -> Tag stimmt nicht.",
+            "vault_key_utf8": "tmv_AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA",
+            "key_uuid": "00000000-0000-4000-8000-000000000000",
+            "wrapped_master_key": "000102030405060708090a0ba3d4da6a8a4688a21c8b9207e4696952ff408b3d9239fcbb11cc3f022c33270080e94c787f280de44f97d27773628b3d",
+            "expect": "auth_failure"
+        },
+        {
+            "name": "beschaedigter_tag",
+            "note": "Letztes Byte des Blobs (Tag) invertiert.",
+            "vault_key_utf8": "tmv_AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA",
+            "key_uuid": "0f3c4c5e-7a1b-4d2e-9f80-1a2b3c4d5e6f",
+            "wrapped_master_key": "000102030405060708090a0ba3d4da6a8a4688a21c8b9207e4696952ff408b3d9239fcbb11cc3f022c33270080e94c787f280de44f97d27773628bc2",
+            "expect": "auth_failure"
+        },
+        {
+            "name": "zu_kurz",
+            "note": "Blob kuerzer als iv(12)+tag(16)+32 Byte Master Key -> ablehnen, nicht raten.",
+            "vault_key_utf8": "tmv_AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA",
+            "key_uuid": "0f3c4c5e-7a1b-4d2e-9f80-1a2b3c4d5e6f",
+            "wrapped_master_key": "000102030405060708090a0ba3d4da6a8a4688a21c8b9207e4696952ff408b3d9239fcbb11cc3f02",
+            "expect": "auth_failure"
+        }
+    ]
+}

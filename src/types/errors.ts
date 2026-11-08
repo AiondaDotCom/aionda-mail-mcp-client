@@ -1,0 +1,33 @@
+/**
+ * Error Code Constants
+ * Source: includes/config.php
+ */
+export const ErrorCodes = {
+    SUCCESS: 0,
+    UNDEFINED: 1,
+    NOT_LOGGED_IN: 2,
+    MISSING_PARAMETERS: 6,
+    INVALID_PARAMETERS: 8,
+    PERMISSION_DENIED: 9,
+    INTERNAL_ERROR: 11,
+    DEA_ALREADY_EXISTS: 12,
+    DEA_NAME_TOO_SHORT: 17,
+    DEA_NAME_TOO_LONG: 18,
+    RATE_LIMIT_EXCEEDED: 38,
+    EMAIL_SEND_FAILED: 39,
+    EMAIL_NOT_FOUND: 43,
+    ACCOUNT_NOT_FOUND: 51,
+    RATE_LIMITED: 58,
+    NOT_FOUND: 59,
+    AUTHENTICATION_ERROR: 61,
+    LIMIT_REACHED: 63,
+    DEA_NOT_FOUND: 64,
+    VAULT_NOT_ENABLED: 73,
+    MISSING_PARAMETER: 75,
+    DECRYPTION_FAILED: 77,
+    RATE_LIMIT: 78,
+    AI_EMPLOYEE_NOT_FOUND: 102,
+    AI_EMPLOYEE_VAULT_SETUP_FAILED: 104,
+} as const;
+
+export type ErrorCode = typeof ErrorCodes[keyof typeof ErrorCodes];

@@ -1,0 +1,297 @@
+{
+  "generator": {
+    "source": "@aiondadotcom/mail-mcp-client@0.15.0",
+    "date": "2026-07-27"
+  },
+  "encoding": "Alle Byte-Felder als lowercase Hex, ausser raw_input/normalized/password_utf8 (Klartext). password_keys: derivation entscheidet - pbkdf2_sha256_600k = PBKDF2-SHA256(password, salt, iterations) -> 32 Byte; argon2id_m65536_t3_p4 = Argon2id(password, salt, t=iterations, m=memory_kib, p=parallelism) -> 32 Byte. recovery_hashes: SHA-256(normalizeRecoveryMnemonicInput(raw_input)). share_xor: encrypted = share XOR derived_key[0..len]. share_format (#4fdb8c92): version 1 = share XOR derived_key (32 Byte, kein Kopf); version 2 = 0x02 || share XOR wrapping_key (33 Byte), wrapping_key = HKDF-SHA-256(ikm=derived_key, salt=leer, info=UTF-8(\"aionda-vault-share-v2\"), 32). downgraded_to_v1 = encrypted ohne Kopfbyte, downgraded_share = was ein Leser daraus macht (Muell, != share). share_format_rejected: jeder Leser MUSS diese Chiffretexte mit einem Formatfehler ablehnen. shamir: Lagrange-Interpolation in GF(2^8) bei x=0. unlock_chain: Passwort-Anteil + Wiederherstellungs-Anteil ergeben master_key; encrypted_private_key = AES-256-GCM(x25519_private || mlkem_private, master_key, private_key_iv) im Layout ciphertext||tag mit getrenntem IV.",
+  "password_keys": [
+    {
+      "name": "pbkdf2_ascii",
+      "password_utf8": "correct-horse-battery-staple",
+      "password": "636f72726563742d686f7273652d626174746572792d737461706c65",
+      "salt": "d45ab55479d389b59c43279cbc2121988b5b573129541b1d4568a08aecb6505f",
+      "derivation": "pbkdf2_sha256_600k",
+      "iterations": 600000,
+      "memory_kib": null,
+      "parallelism": null,
+      "expected": "8144568a113d5dbe2d00346e71902ccc7e83d171f102aedc5f2cdc214e667a17"
+    },
+    {
+      "name": "argon2id_ascii",
+      "password_utf8": "correct-horse-battery-staple",
+      "password": "636f72726563742d686f7273652d626174746572792d737461706c65",
+      "salt": "d45ab55479d389b59c43279cbc2121988b5b573129541b1d4568a08aecb6505f",
+      "derivation": "argon2id_m65536_t3_p4",
+      "iterations": 3,
+      "memory_kib": 65536,
+      "parallelism": 4,
+      "expected": "9e376f10d8467e6eca4e18e6cc1e208a6f6a95d39740006f9bc38721b96db9bb"
+    },
+    {
+      "name": "pbkdf2_umlaute",
+      "password_utf8": "Käsebrötchen-mit-Soße-99!",
+      "password": "4bc3a473656272c3b6746368656e2d6d69742d536fc39f652d393921",
+      "salt": "c43a9ee98cb0f9421b3e1ecb6a707f7b14593f3fef63b69f0cd629a3648e6c26",
+      "derivation": "pbkdf2_sha256_600k",
+      "iterations": 600000,
+      "memory_kib": null,
+      "parallelism": null,
+      "expected": "a3fc9f547253f106f31e4762bc393fe98c605a17041cc91eefec1609f5aac370"
+    },
+    {
+      "name": "argon2id_umlaute",
+      "password_utf8": "Käsebrötchen-mit-Soße-99!",
+      "password": "4bc3a473656272c3b6746368656e2d6d69742d536fc39f652d393921",
+      "salt": "c43a9ee98cb0f9421b3e1ecb6a707f7b14593f3fef63b69f0cd629a3648e6c26",
+      "derivation": "argon2id_m65536_t3_p4",
+      "iterations": 3,
+      "memory_kib": 65536,
+      "parallelism": 4,
+      "expected": "657ef555a8e1f9fe5714a763f3f2c0378a02e32f302d3e09550b88669c2427c7"
+    },
+    {
+      "name": "pbkdf2_emoji",
+      "password_utf8": "schlüssel🔐ende",
+      "password": "7363686cc3bc7373656cf09f9490656e6465",
+      "salt": "7ded0f050a3a33286bc36bdf4b954078778ccfc0f1db02fdaf5570707f4623ea",
+      "derivation": "pbkdf2_sha256_600k",
+      "iterations": 600000,
+      "memory_kib": null,
+      "parallelism": null,
+      "expected": "b43010523d65c30c3796657a1876bc26e6cdb2d260a79e1c3153cfcc7e98bf2b"
+    },
+    {
+      "name": "argon2id_emoji",
+      "password_utf8": "schlüssel🔐ende",
+      "password": "7363686cc3bc7373656cf09f9490656e6465",
+      "salt": "7ded0f050a3a33286bc36bdf4b954078778ccfc0f1db02fdaf5570707f4623ea",
+      "derivation": "argon2id_m65536_t3_p4",
+      "iterations": 3,
+      "memory_kib": 65536,
+      "parallelism": 4,
+      "expected": "51d698ec84cc3b253fa1280cc0471cd802e3dd3a423011d3c490a5e443f84604"
+    }
+  ],
+  "recovery_hashes": [
+    {
+      "name": "recovery_clean",
+      "raw_input": "alter seek seminar goose enemy uncover forest toy head invite cousin yellow absurd design clown stone army wheel arrow ladder valve merge real kite",
+      "normalized": "alter seek seminar goose enemy uncover forest toy head invite cousin yellow absurd design clown stone army wheel arrow ladder valve merge real kite",
+      "expected": "81100e1b4ae4d662ebbc07556d609156971aa0555fb5fd3680ddec13d172a69c"
+    },
+    {
+      "name": "recovery_numbered_crlf",
+      "raw_input": "1. Alter\r\n2. Seek\r\n3. Seminar\r\n4. Goose\r\n5. Enemy\r\n6. Uncover\r\n7. Forest\r\n8. Toy\r\n9. Head\r\n10. Invite\r\n11. Cousin\r\n12. Yellow\r\n13. Absurd\r\n14. Design\r\n15. Clown\r\n16. Stone\r\n17. Army\r\n18. Wheel\r\n19. Arrow\r\n20. Ladder\r\n21. Valve\r\n22. Merge\r\n23. Real\r\n24. Kite",
+      "normalized": "alter seek seminar goose enemy uncover forest toy head invite cousin yellow absurd design clown stone army wheel arrow ladder valve merge real kite",
+      "expected": "81100e1b4ae4d662ebbc07556d609156971aa0555fb5fd3680ddec13d172a69c"
+    }
+  ],
+  "share_xor": [
+    {
+      "name": "share_xor_random",
+      "share": "34f382dd78508b676f88bf492a9667d371afc23b7a428d1740556ac56ea623a7",
+      "derived_key": "d1b2e4f1765aaf837a68f48d512b01634a89ed86b141be14f75010dc6d2fab83",
+      "encrypted": "e541662c0e0a24e415e04bc47bbd66b03b262fbdcb033303b7057a1903898824"
+    },
+    {
+      "name": "share_xor_short_key",
+      "share": "6352c86a6ea2074d76afca1be52c70ce2eba76cc1649801af9ae8490140f7897",
+      "derived_key": "eb78f7c7f924aacf6cc86a093311a4db4f92aa1ed7ce3aa28d6f519f5542cecd",
+      "encrypted": "882a3fad9786ad821a67a012d63dd4156128dcd2c187bab874c1d50f414db65a"
+    }
+  ],
+  "share_format": [
+    {
+      "name": "share_format_v1_a",
+      "version": 1,
+      "share": "129cf60644e6f24568fc1bb9a99ff631db99a7952374742d107b2268e476b36f",
+      "derived_key": "7ace03c15808aaebf5ca1e187fef5bc24f413a2cb42c071b814d066c6d15db2c",
+      "wrapping_key": "7ace03c15808aaebf5ca1e187fef5bc24f413a2cb42c071b814d066c6d15db2c",
+      "encrypted": "6852f5c71cee58ae9d3605a1d670adf394d89db9975873369136240489636843"
+    },
+    {
+      "name": "share_format_v1_b",
+      "version": 1,
+      "share": "ea9e34afa26ba1a2efb78a9c9d420151f40f9a830cce976e2e2c0e67d1722cbe",
+      "derived_key": "12db1a61406858ded2704cdd07df1f6a2b2c8524d7e28369eacfacc48d35b7f0",
+      "wrapping_key": "12db1a61406858ded2704cdd07df1f6a2b2c8524d7e28369eacfacc48d35b7f0",
+      "encrypted": "f8452ecee203f97c3dc7c6419a9d1e3bdf231fa7db2c1407c4e3a2a35c479b4e"
+    },
+    {
+      "name": "share_format_v2_a",
+      "version": 2,
+      "share": "2fdb9b0a1a0263682f41a2a75b73185b6a8c8fcb6c09a01d3b566c2b1a5fd867",
+      "derived_key": "fb8eb8c89f4cb59c1cb4dbebb6fd51a65e17e5e1fe90d7860cb610ffc1daaffa",
+      "wrapping_key": "5a80fc881de0b2311a53c2d6ee7cbed82f03a50740d0e33785d97c8e679d1a6c",
+      "encrypted": "02755b678207e2d15935126071b50fa683458f2acc2cd9432abe8f10a57dc2c20b",
+      "downgraded_to_v1": "755b678207e2d15935126071b50fa683458f2acc2cd9432abe8f10a57dc2c20b",
+      "downgraded_share": "8ed5df4a98ae64c529a6bb9a03f2f7251b98cf2dd24994acb239005abc186df1"
+    },
+    {
+      "name": "share_format_v2_b",
+      "version": 2,
+      "share": "a2d811cce985a175d1ceb617cfad7631a2a174a1f6568b95327e7dfc1f7d2653",
+      "derived_key": "b1969447c8c0a7ed443398689793790c5657c6a47c348ef842e9df8882f27b92",
+      "wrapping_key": "302aef6b04d668606396e87664fc63c26f7c6dd2d2a1d6055bd90bbbb33e23ac",
+      "encrypted": "0292f2fea7ed53c915b2585e61ab5115f3cddd197324f75d9069a77647ac4305ff",
+      "downgraded_to_v1": "92f2fea7ed53c915b2585e61ab5115f3cddd197324f75d9069a77647ac4305ff",
+      "downgraded_share": "23646ae025936ef8f66bc6093cc26cff9b8adfd758c3d3682b4ea9cf2eb17e6d"
+    }
+  ],
+  "share_format_rejected": [
+    {
+      "name": "unknown_version_3",
+      "encrypted": "031a732998c66c028192a13c9c12a831784bbf9c0fc01ad624c968485458f33a43",
+      "reason": "unknown_version"
+    },
+    {
+      "name": "unknown_version_255",
+      "encrypted": "ff1a732998c66c028192a13c9c12a831784bbf9c0fc01ad624c968485458f33a43",
+      "reason": "unknown_version"
+    },
+    {
+      "name": "header_byte_1_has_no_header_format",
+      "encrypted": "011a732998c66c028192a13c9c12a831784bbf9c0fc01ad624c968485458f33a43",
+      "reason": "unknown_version"
+    },
+    {
+      "name": "v2_body_too_short",
+      "encrypted": "021a732998c66c028192a13c9c12a831784bbf9c0fc01ad624c968485458f3",
+      "reason": "length_mismatch"
+    },
+    {
+      "name": "v2_body_too_long",
+      "encrypted": "021a732998c66c028192a13c9c12a831784bbf9c0fc01ad624c968485458f33a4356",
+      "reason": "length_mismatch"
+    },
+    {
+      "name": "empty",
+      "encrypted": "",
+      "reason": "empty"
+    }
+  ],
+  "shamir": [
+    {
+      "name": "shamir_2of3_1_2",
+      "secret": "ae997b60b36df4505c1f930fa63bcf4545439b159babae7424bdd454b70801bc",
+      "shares": [
+        {
+          "x": 1,
+          "data": "0a6800a76e8b3e02ca0ff0e0cef74e0d6aae43f0d2bc056245bd061bbeebc866"
+        },
+        {
+          "x": 2,
+          "data": "fd608df512ba7bf46b3f55ca76b8d6d51b8230c40985e358e6bd6bcaa5d58813"
+        },
+        {
+          "x": 3,
+          "data": "5991f632cf5cb1a6fd2f36251e74579d346fe8214092484e87bdb985ac3641c9"
+        }
+      ],
+      "reconstruct_from": [
+        1,
+        2
+      ]
+    },
+    {
+      "name": "shamir_2of3_1_3",
+      "secret": "ae997b60b36df4505c1f930fa63bcf4545439b159babae7424bdd454b70801bc",
+      "shares": [
+        {
+          "x": 1,
+          "data": "0a6800a76e8b3e02ca0ff0e0cef74e0d6aae43f0d2bc056245bd061bbeebc866"
+        },
+        {
+          "x": 2,
+          "data": "fd608df512ba7bf46b3f55ca76b8d6d51b8230c40985e358e6bd6bcaa5d58813"
+        },
+        {
+          "x": 3,
+          "data": "5991f632cf5cb1a6fd2f36251e74579d346fe8214092484e87bdb985ac3641c9"
+        }
+      ],
+      "reconstruct_from": [
+        1,
+        3
+      ]
+    },
+    {
+      "name": "shamir_2of3_2_3",
+      "secret": "ae997b60b36df4505c1f930fa63bcf4545439b159babae7424bdd454b70801bc",
+      "shares": [
+        {
+          "x": 1,
+          "data": "0a6800a76e8b3e02ca0ff0e0cef74e0d6aae43f0d2bc056245bd061bbeebc866"
+        },
+        {
+          "x": 2,
+          "data": "fd608df512ba7bf46b3f55ca76b8d6d51b8230c40985e358e6bd6bcaa5d58813"
+        },
+        {
+          "x": 3,
+          "data": "5991f632cf5cb1a6fd2f36251e74579d346fe8214092484e87bdb985ac3641c9"
+        }
+      ],
+      "reconstruct_from": [
+        2,
+        3
+      ]
+    }
+  ],
+  "unlock_chain": {
+    "master_key": "b1fd57976bfca0de5a91dfebf9117cb7ebd5bce5a6e24c43309cf7636df45c4b",
+    "password_utf8": "ban@nwe4hew8crz3BDM",
+    "recovery_mnemonic": "alter seek seminar goose enemy uncover forest toy head invite cousin yellow absurd design clown stone army wheel arrow ladder valve merge real kite",
+    "shares": [
+      {
+        "index": 1,
+        "type": "password",
+        "encrypted": "2892a37f2ddf125f49d96baf42dd9c26ba6f46057e7465526dae8ddccf6a4d3d",
+        "salt": "6d6345a748259307c2d9e43f8495049ea0fd11c51228697e9bbce89ea598c41a",
+        "derivation": "pbkdf2_sha256_600k"
+      },
+      {
+        "index": 2,
+        "type": "passkey",
+        "encrypted": "c78eac2b0e5ee03a2ea6aedcb70872a95638430ce0fbc488b82d6b25ffe88a4f"
+      },
+      {
+        "index": 3,
+        "type": "recovery",
+        "encrypted": "b6b9a7158e40d507f16a55a527186f73eacae8213874f126f4d4cd92d8521df6"
+      }
+    ],
+    "encrypted_private_key": "8e730fb952d1cf806fc6462f5a16b16db48170e72b676ac283d995d9d17e4907caad37aee0fb677cd031f11ac5679d49d46a8f322b3565b36a208e98cb1148b73a919c96fe0c3b1455a3123c96673e34ada165acfa014c66f4e20714208ea08daa11a98aa34dc68401732eb43fc75dee",
+    "private_key_iv": "d178f15437cfba5bc8b4bd84",
+    "x25519_private": "c59bfb9b4b84b955a9665d1346a3fcb0b7381838a5673391a3e518c528184e6e",
+    "mlkem_private": "4073d36d98007a101fc90a73ff45f17da119746fbacfab0490fffddd7108a9e0cbc66c24b433f7604421f31067b003b0725d408f3e87e8b905dabf81bb4cb28b"
+  },
+  "unlock_chain_argon2id": {
+    "master_key": "db5037f4c7d718e0ce4a5e92e0a0731addfd491a8b5c121134039121363f4daf",
+    "password_utf8": "ban@nwe4hew8crz3BDM",
+    "recovery_mnemonic": "alter seek seminar goose enemy uncover forest toy head invite cousin yellow absurd design clown stone army wheel arrow ladder valve merge real kite",
+    "shares": [
+      {
+        "index": 1,
+        "type": "password",
+        "encrypted": "be59e10004cf8977df46f2d71ade84e61939c074f28a090d6a58b6f218254f77",
+        "salt": "28f3db3be3840312b0bcd4aca194cfefaff6beae901ca4ac35d6a4df92e795a7",
+        "derivation": "argon2id_m65536_t3_p4"
+      },
+      {
+        "index": 2,
+        "type": "passkey",
+        "encrypted": "7dd18287fde8e0569e65d22976374683a4e51c33989d6f849f51b3ff4a0e1556"
+      },
+      {
+        "index": 3,
+        "type": "recovery",
+        "encrypted": "b531a5969178ce1de05d2fe35d8dfd02c4c69f39249916cefb774bf1fbf6370d"
+      }
+    ],
+    "encrypted_private_key": "b4ddd640a61d99d405876e345b6dad9a7031b20c9f23962b120b0f024235d93cb5359fdb4e464c996f746487a7f5ec3eb5745e85a0aa31459f012ceee327a3927d62165a837466162fb33662cbd06541a3abbd0a7434c6244df81a6ac04fad55685e2183df3dcd700388950772599f83",
+    "private_key_iv": "12df7e63a02480e4a48ec804",
+    "x25519_private": "2d6b22409e7e185ace9be8f41d1cf5371bd90738c03646215427a5dd56aadcea",
+    "mlkem_private": "8927688ca4486d5c327ee22a21ab443c788e3cf9b3d0425860f8328940d087d6d0cd102c200f05d9da1d50c5031e9d533a602a11df3452c0d1a8dfb01b3327e3"
+  }
+}

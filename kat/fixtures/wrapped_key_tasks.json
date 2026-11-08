@@ -1,0 +1,93 @@
+{
+  "generator": {
+    "source": "@aiondadotcom/mail-mcp-client@0.15.0",
+    "date": "2026-07-27"
+  },
+  "encoding": "wrapped_blob = version(0x02) || salt(32) || iv(12) || ciphertext+tag(48) = 93 Byte. Wrapping-Key = HKDF-SHA-256(ikm=master_key, salt, info=label). Aktuelle Blobs authentifizieren trashmail-tasks-v1.1:wrapped-key. expect=\"auth_failure\": das Entpacken MUSS scheitern (kein Klartext-Fallback). field_cases decken alle produktiven Feldkontexte und einen Legacy-Fall ohne AAD ab.",
+  "cases": [
+    {
+      "name": "tasks_v1",
+      "master_key": "f405d2bee5c40e6a047150d384ed17bfd01ba0fcbb04cddc04770ef1dac4b090",
+      "salt": "8306497da80cf867f006a5b85df8cb2399c81631b50e41e683c4cc1d087b10bd",
+      "iv": "39cdb1ff53376640bff4d137",
+      "payload_key": "fec4796d919388270e8a5abaed99ccf14891965cb07fddbe27e3759e9ebdfd5f",
+      "label": "trashmail-tasks-v1",
+      "additional_data_utf8": "trashmail-tasks-v1.1:wrapped-key",
+      "wrapped_blob": "028306497da80cf867f006a5b85df8cb2399c81631b50e41e683c4cc1d087b10bd39cdb1ff53376640bff4d137127822d92b2fbbbcba46abb8286ef281ba552112da24412abe1d359cc4988f7f182d09fda41a400ac7cde411838ad946"
+    },
+    {
+      "name": "contacts_v2_dual_read",
+      "master_key": "f405d2bee5c40e6a047150d384ed17bfd01ba0fcbb04cddc04770ef1dac4b090",
+      "salt": "e0e8a252a9ef029114787abc9ac60775ba5bc0bf954bbd7286946372a0e53412",
+      "iv": "d45ad2784d8887a8812f539d",
+      "payload_key": "07f9b9059b35e224123fe5f4b0fbab2c512e952df3fd76427b4f374def6eed50",
+      "label": "trashmail-contacts-v2",
+      "wrapped_blob": "02e0e8a252a9ef029114787abc9ac60775ba5bc0bf954bbd7286946372a0e53412d45ad2784d8887a8812f539d074a3ad70526a463834c2570b53acd30748a4ae2cb2a5bf31f846c0b999d6ad021f9b7293dd74537cc4aac950af083fd"
+    },
+    {
+      "name": "wrong_label_fails",
+      "master_key": "f405d2bee5c40e6a047150d384ed17bfd01ba0fcbb04cddc04770ef1dac4b090",
+      "salt": "642618820681bb27c3382c963cb73fcb0483b437c86e58c49d42b76f862e9df0",
+      "iv": "3c49b07214edd3f6e3a907cf",
+      "payload_key": "c477ac96114820dbdfea994d208aec067d44dd896471d0a62e3aa179da950a24",
+      "label": "trashmail-bogus-v1",
+      "wrapped_blob": "02642618820681bb27c3382c963cb73fcb0483b437c86e58c49d42b76f862e9df03c49b07214edd3f6e3a907cfc25005bf02aee1ca2a70ec2c0a11690a369986f46a08cb3c3f75fe073fa558d5660958a39a27b352ccb5e912d6cdf88f",
+      "expect": "auth_failure"
+    }
+  ],
+  "field_cases": [
+    {
+      "name": "task_field_title",
+      "task_key": "eb48bcebecf7c485cc35e01299de76aadfff72b1e4e19a08b6fcfdc86544d834",
+      "iv": "6554f534625afc8603e2c4c7",
+      "plaintext_utf8": "KAT title: Grüße 🔐",
+      "field_context": "title",
+      "additional_data_utf8": "trashmail-tasks-v1.1:title",
+      "stored_blob": "6554f534625afc8603e2c4c7f9bf4ad88bde486754fb0582fdcbc15b3797bcab77234ec64e7a0c0e29fe5efe74ee195123765e"
+    },
+    {
+      "name": "task_field_notes",
+      "task_key": "cba7317505dc555949c4b52775aabacd2a01f03f899c3c9a1e75051901f92fe5",
+      "iv": "d16fa95ad6a5db9e120b9e46",
+      "plaintext_utf8": "KAT notes: Grüße 🔐",
+      "field_context": "notes",
+      "additional_data_utf8": "trashmail-tasks-v1.1:notes",
+      "stored_blob": "d16fa95ad6a5db9e120b9e46b3596d2b66e68241e151869b43b8160ca0e574321beac620ec61f6141458020cfe50a592d724a6"
+    },
+    {
+      "name": "task_field_steps",
+      "task_key": "a3149ba09ed8ef5f073112daaf31746d0337419eef3316d3971af97edb1f2565",
+      "iv": "78570c8ce5c0dd0b5f3d1432",
+      "plaintext_utf8": "KAT steps: Grüße 🔐",
+      "field_context": "steps",
+      "additional_data_utf8": "trashmail-tasks-v1.1:steps",
+      "stored_blob": "78570c8ce5c0dd0b5f3d14321ac253f32baa5643eaa24f1db5c858eae5c98da94d69fe5c4e1496b33c16f9692cc65dd17962ea"
+    },
+    {
+      "name": "task_field_metadata",
+      "task_key": "ff06704c76eed5a856dce6bd2e6dc7e9afa5630b161dd15f27a4ca7f0ab91bd4",
+      "iv": "546ade34a721967306ce9c56",
+      "plaintext_utf8": "KAT metadata: Grüße 🔐",
+      "field_context": "metadata",
+      "additional_data_utf8": "trashmail-tasks-v1.1:metadata",
+      "stored_blob": "546ade34a721967306ce9c56e5fdb53de50255113abfe8fd44e4459eb97027f54e3b82058d6c4bc04fb05d12890c07bcd82f362ca67b"
+    },
+    {
+      "name": "task_field_list-name",
+      "task_key": "3e01a89ae3b1421533afc255c91585b5b5c1a1adc7d058a0292d2a750dc9a215",
+      "iv": "42c05c3df2e756a5edf279d6",
+      "plaintext_utf8": "KAT list-name: Grüße 🔐",
+      "field_context": "list-name",
+      "additional_data_utf8": "trashmail-tasks-v1.1:list-name",
+      "stored_blob": "42c05c3df2e756a5edf279d6a80f545426b8eea1a1a6686b114ad3f50d6a38b20889a18e3ae3cd0a5112351c2725b40c929d47d9e6030a"
+    },
+    {
+      "name": "task_field_legacy_without_aad",
+      "task_key": "9144aaba72305cbd18384e258a6699524672fcff54ad5b1a052e7665d5020971",
+      "iv": "9402628a48fb47b9ad9e5ecd",
+      "plaintext_utf8": "Legacy-Titel ohne AAD",
+      "field_context": "title",
+      "stored_blob": "9402628a48fb47b9ad9e5ecdcedcc9436ff20c30db0ade808cd75f94def960e7c169d5a1b054aba92a202e749990e0b5f9"
+    }
+  ]
+}
