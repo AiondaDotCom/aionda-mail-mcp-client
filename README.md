@@ -1,8 +1,18 @@
-# Aionda Mail MCP Client
+<p align="center">
+  <a href="https://aionda.com">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/AiondaDotCom/aionda-mail-mcp-client/main/assets/aionda-logo-white.png">
+      <img alt="Aionda" src="https://raw.githubusercontent.com/AiondaDotCom/aionda-mail-mcp-client/main/assets/aionda-logo-black.png" width="320">
+    </picture>
+  </a>
+</p>
+
+<h1 align="center">Aionda Mail MCP Client</h1>
 
 **Let AI agents work with your end-to-end encrypted mailbox without handing the keys to anyone else.**
 
 [![npm](https://img.shields.io/npm/v/@aiondadotcom/mail-mcp-client.svg)](https://www.npmjs.com/package/@aiondadotcom/mail-mcp-client)
+[![CI](https://github.com/AiondaDotCom/aionda-mail-mcp-client/actions/workflows/ci.yml/badge.svg)](https://github.com/AiondaDotCom/aionda-mail-mcp-client/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 ![Post-quantum](https://img.shields.io/badge/crypto-X25519%20%2B%20ML--KEM--1024-6f42c1)
 
