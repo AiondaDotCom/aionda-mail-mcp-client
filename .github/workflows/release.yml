@@ -1,0 +1,40 @@
+name: Release
+
+# Publishes to npm via trusted publishing (OIDC): no npm token is stored in
+# this repository. npm attaches a provenance attestation that links the
+# package to this workflow run and commit.
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write   # create the GitHub release
+  id-token: write   # OIDC token for npm trusted publishing + provenance
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: npm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - name: Use an npm version with trusted publishing
+        run: npm install -g npm@12.2.0 && npm --version
+      - name: Tag must match package.json
+        run: |
+          version=$(node -p "require('./package.json').version")
+          test "v$version" = "$GITHUB_REF_NAME" || { echo "Tag $GITHUB_REF_NAME does not match package.json version $version"; exit 1; }
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+      - run: npm run test:unit
+      - name: Publish to npm (with provenance)
+        run: npm publish --access public --provenance
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes --title "$GITHUB_REF_NAME"
