@@ -552,7 +552,10 @@ export class McpDecryptingProxy {
                 });
                 const altDaten = this.parseToolContent(alt);
                 if (alt.error || !altDaten || altDaten.error || typeof altDaten.encrypted_content !== 'string') {
-                    return fehler(`Draft ${draftId} not found`);
+                    // Grund des Servers weitergeben, nicht pauschal „not found" (CLAUDE.md, Punkt 7).
+                    const grund = alt.error?.message
+                        ?? (typeof altDaten?.message === 'string' ? altDaten.message : 'no encrypted_content returned');
+                    return fehler(`Draft ${draftId} could not be loaded: ${grund}`);
                 }
                 bisher = await decryptDraft(altDaten.encrypted_content, this.masterKey);
             }

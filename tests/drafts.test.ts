@@ -146,6 +146,7 @@ describe('Proxy save_draft mit persönlichem Schlüssel', () => {
         const { ablage, anServer, rufe } = aufbau();
         const r = await rufe('save_draft', { draft_id: 'gibt-es-nicht', body: 'x' });
         expect(r.error).toBe(true);
+        expect(String(r.message)).toContain('Draft not found');
         expect(anServer.some(a => a.name === 'save_draft')).toBe(false);
         expect(ablage.size).toBe(0);
     });
