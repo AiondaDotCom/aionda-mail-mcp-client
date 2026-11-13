@@ -46,6 +46,13 @@ describe('Entwurfsformat', () => {
         expect(() => parseAddresses('kein Empfänger', 'to')).toThrow(/to/);
     });
 
+    it('zerlegt Adressen wie der Server: Komma im Namen, Einzelobjekt, strenge Objektadresse, geschütztes Leerzeichen', () => {
+        expect(parseAddresses('"Müller, Hans" <m@x.de>, b@x.de', 'to')).toEqual([{ email: 'm@x.de', name: 'Müller, Hans' }, { email: 'b@x.de' }]);
+        expect(parseAddresses({ email: 'e@x.de', name: 'E' }, 'bcc')).toEqual([{ email: 'e@x.de', name: 'E' }]);
+        expect(() => parseAddresses([{ email: 'x@' }], 'cc')).toThrow(/valid email/);
+        expect(mergeDraft({ subject: 'S', cc: [{ email: 'c@x.de' }] }, { cc: '\u00A0' }, []).cc).toEqual([{ email: 'c@x.de' }]);
+    });
+
     it('ändert beim Fortschreiben nur übergebene Felder und behält Anhänge', () => {
         const bisher = {
             subject: 'Alt', body: 'alt', to: [{ email: 'a@x.de' }], priority: 'high',

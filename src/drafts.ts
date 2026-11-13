@@ -64,35 +64,42 @@ const IV_LAENGE = 12;
 export function parseAddresses(value: unknown, feld: string): DraftAddress[] {
     if (value === undefined || value === null || value === '') return [];
 
-    const teile: unknown[] = Array.isArray(value)
-        ? value
-        : typeof value === 'string'
-            ? value.split(/[,;]/)
-            : [value];
+    const saeubern = (t: string): string => t.replace(/^[\s\u00A0]+|[\s\u00A0]+$/gu, '');
+    const istAdresse = (t: string): boolean => /^[^\s@]+@[^\s@]+$/u.test(t);
+
+    // Einzelnes Objekt {email, name} wie eine Liste mit einem Eintrag (wie der Server).
+    const liste: unknown = value && typeof value === 'object' && !Array.isArray(value) && 'email' in value
+        ? [value] : value;
+    // Trennen an , oder ; - nicht innerhalb von Anführungszeichen („"Müller, Hans" <m@x>“).
+    const teile: unknown[] = Array.isArray(liste)
+        ? liste
+        : typeof liste === 'string'
+            ? liste.split(/[,;](?=(?:[^"]*"[^"]*")*[^"]*$)/u)
+            : [liste];
 
     const ergebnis: DraftAddress[] = [];
     for (const teil of teile) {
         if (teil && typeof teil === 'object') {
-            const email = (teil as Record<string, unknown>).email;
-            const name  = (teil as Record<string, unknown>).name;
-            if (typeof email !== 'string' || !email.includes('@')) {
+            const rohEmail = (teil as Record<string, unknown>).email;
+            const rohName  = (teil as Record<string, unknown>).name;
+            const email = typeof rohEmail === 'string' ? saeubern(rohEmail) : '';
+            const name  = typeof rohName === 'string' ? saeubern(rohName) : '';
+            if (!istAdresse(email)) {
                 throw new Error(`${feld}: entry without valid email`);
             }
-            ergebnis.push(typeof name === 'string' && name.trim() !== ''
-                ? { email: email.trim(), name: name.trim() }
-                : { email: email.trim() });
+            ergebnis.push(name !== '' ? { email, name } : { email });
             continue;
         }
         if (typeof teil !== 'string') {
             throw new Error(`${feld}: unsupported address value`);
         }
-        const roh = teil.trim();
+        const roh = saeubern(teil);
         if (roh === '') continue;
-        const mitName = /^(.*)<([^<>\s]+@[^<>\s]+)>$/.exec(roh);
+        const mitName = /^(.*)<([^<>\s]+@[^<>\s]+)>$/u.exec(roh);
         if (mitName) {
-            const name = mitName[1].trim().replace(/^"(.*)"$/, '$1').trim();
+            const name = saeubern(saeubern(mitName[1]).replace(/^"(.*)"$/u, '$1'));
             ergebnis.push(name !== '' ? { email: mitName[2], name } : { email: mitName[2] });
-        } else if (/^[^\s@]+@[^\s@]+$/.test(roh)) {
+        } else if (istAdresse(roh)) {
             ergebnis.push({ email: roh });
         } else {
             throw new Error(`${feld}: '${roh}' is not an email address`);
@@ -107,7 +114,7 @@ export const LEERBARE_FELDER = ['subject', 'body', 'to', 'cc', 'bcc', 'from_iden
 /** Leerer Wert = „nicht angegeben": Modelle schicken optionale Felder oft leer mit. */
 function istLeer(wert: unknown): boolean {
     return wert === undefined || wert === null
-        || (typeof wert === 'string' && wert.trim() === '')
+        || (typeof wert === 'string' && wert.replace(/[\s\u00A0]+/gu, '') === '')
         || (Array.isArray(wert) && wert.length === 0);
 }
 
