@@ -24,6 +24,8 @@ import { hybridDecapsulate } from './crypto/hybrid-kem';
 import { decryptSharedFolderKey } from './crypto/shared-folder-key';
 import { packWrappedKeyHex } from './crypto/wrapped-key-pack';
 import { unwrapMasterKey } from './crypto/mcp-master-key';
+import { decryptDraft, draftForAi, encryptDraft, mergeDraft } from './drafts';
+import type { DraftAttachment, DraftContent } from './drafts';
 import {
     decryptTaskField,
     encryptTaskField,
@@ -90,6 +92,8 @@ export class McpDecryptingProxy {
     private endpoint: string;
     private apiKey: string;
     private masterKey: Uint8Array | null = null;
+    /** Persönlicher Schlüssel eines Menschen: Server kennt den Hauptschlüssel nicht. */
+    private personalKey = false;
     private privateKeys: VaultPrivateKeys | null = null;
     private sessionId: string | null = null;
     private vaultKey: string;
@@ -172,6 +176,7 @@ export class McpDecryptingProxy {
             }
             // Wirft McpDecryptionError bei falschem tmv_, falscher UUID, Schaden.
             this.masterKey = await unwrapMasterKey(fromHex(wrapped), this.vaultKey, keyUuid);
+            this.personalKey = true;
             process.stderr.write('[proxy] Personal MCP key: master key unwrapped\n');
         } else {
             // KI-Mitarbeiter: derselbe Text, direkt als Master Key.
@@ -274,6 +279,12 @@ export class McpDecryptingProxy {
                 if (deliverResult) return deliverResult;
             }
 
+            // Entwürfe eines Menschen verschlüsselt der Proxy selbst - der
+            // Server kennt seinen Hauptschlüssel nicht (Zero Knowledge).
+            if (toolName === 'save_draft' && this.personalKey) {
+                return this.handleSavePersonalDraft(request);
+            }
+
             request = await this.maybeEncryptRequest(request);
         }
 
@@ -307,7 +318,8 @@ export class McpDecryptingProxy {
 
         // Auto-append signature to outgoing emails
         if (typeof args.body === 'string') {
-            if (['send_email', 'forward_email', 'save_draft'].includes(toolName) && this.signatureAutoInsertNew) {
+            const fortschreiben = toolName === 'save_draft' && typeof args.draft_id === 'string' && args.draft_id !== '';
+            if (['send_email', 'forward_email', 'save_draft'].includes(toolName) && this.signatureAutoInsertNew && !fortschreiben) {
                 args.body = this.appendSignature(args.body);
             } else if (toolName === 'reply_email' && this.signatureAutoInsertReply) {
                 args.body = this.appendSignature(args.body);
@@ -334,49 +346,7 @@ export class McpDecryptingProxy {
 
         // Read file attachments from disk and convert to base64
         if (['send_email', 'reply_email', 'forward_email'].includes(toolName) && Array.isArray(args.attachments)) {
-            const processedAttachments: Record<string, unknown>[] = [];
-            for (const att of args.attachments as Record<string, unknown>[]) {
-                const filePath = att.file_path as string;
-                if (!filePath) continue;
-
-                try {
-                    const fileData = readFileSync(filePath);
-                    const { basename, extname } = await import('node:path');
-                    const filename = (att.filename as string) || basename(filePath);
-                    const ext = extname(filename).toLowerCase();
-
-                    // Detect mimetype from extension
-                    const mimeMap: Record<string, string> = {
-                        '.pdf': 'application/pdf', '.doc': 'application/msword',
-                        '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-                        '.xls': 'application/vnd.ms-excel',
-                        '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                        '.ppt': 'application/vnd.ms-powerpoint',
-                        '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-                        '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
-                        '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml',
-                        '.txt': 'text/plain', '.csv': 'text/csv', '.html': 'text/html',
-                        '.zip': 'application/zip', '.gz': 'application/gzip',
-                    };
-                    const mimetype = (att.mimetype as string) || mimeMap[ext] || 'application/octet-stream';
-
-                    processedAttachments.push({
-                        filename,
-                        content: fileData.toString('base64'),
-                        mimetype,
-                        size: fileData.length,
-                    });
-
-                    process.stderr.write(`[proxy] Attachment loaded: ${filename} (${fileData.length} bytes)\n`);
-                } catch (e) {
-                    process.stderr.write(`[proxy] Failed to read attachment ${filePath}: ${(e as Error).message}\n`);
-                }
-            }
-            if (processedAttachments.length === 0 && (args.attachments as unknown[]).length > 0) {
-                // All attachments failed to load — refuse to send without them
-                throw new Error('All attachments failed to load. Check file paths and permissions.');
-            }
-            args.attachments = processedAttachments;
+            args.attachments = await this.loadAttachmentFiles(args.attachments as Record<string, unknown>[]);
         }
 
         if (toolName === 'create_folder' && typeof args.name === 'string') {
@@ -500,6 +470,141 @@ export class McpDecryptingProxy {
         return await resp.json() as JsonRpcResponse;
     }
 
+
+    /**
+     * Anhänge von der Platte lesen: {file_path, filename?, mimetype?} →
+     * {filename, content(Base64), mimetype, size}. Wirft, wenn keiner lesbar ist.
+     */
+    private async loadAttachmentFiles(
+        attachments: Record<string, unknown>[]
+    ): Promise<{ filename: string; content: string; mimetype: string; size: number }[]> {
+        const processedAttachments: { filename: string; content: string; mimetype: string; size: number }[] = [];
+        for (const att of attachments) {
+            const filePath = att.file_path as string;
+            if (!filePath) continue;
+
+            try {
+                const fileData = readFileSync(filePath);
+                const { basename, extname } = await import('node:path');
+                const filename = (att.filename as string) || basename(filePath);
+                const ext = extname(filename).toLowerCase();
+
+                // Detect mimetype from extension
+                const mimeMap: Record<string, string> = {
+                    '.pdf': 'application/pdf', '.doc': 'application/msword',
+                    '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                    '.xls': 'application/vnd.ms-excel',
+                    '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    '.ppt': 'application/vnd.ms-powerpoint',
+                    '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                    '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+                    '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml',
+                    '.txt': 'text/plain', '.csv': 'text/csv', '.html': 'text/html',
+                    '.zip': 'application/zip', '.gz': 'application/gzip',
+                };
+                const mimetype = (att.mimetype as string) || mimeMap[ext] || 'application/octet-stream';
+
+                processedAttachments.push({
+                    filename,
+                    content: fileData.toString('base64'),
+                    mimetype,
+                    size: fileData.length,
+                });
+
+                process.stderr.write(`[proxy] Attachment loaded: ${filename} (${fileData.length} bytes)\n`);
+            } catch (e) {
+                process.stderr.write(`[proxy] Failed to read attachment ${filePath}: ${(e as Error).message}\n`);
+            }
+        }
+        if (processedAttachments.length === 0 && attachments.length > 0) {
+            // All attachments failed to load — refuse to send without them
+            throw new Error('All attachments failed to load. Check file paths and permissions.');
+        }
+        return processedAttachments;
+    }
+
+    /**
+     * save_draft mit persönlichem Schlüssel: Entwurf lokal bauen,
+     * verschlüsseln, nur `encrypted_content` (+ draft_id) an den Server.
+     *
+     * Mit draft_id wird der bestehende Entwurf geholt, entschlüsselt und nur
+     * in den übergebenen Feldern geändert - so geht nichts verloren, was der
+     * Nutzer inzwischen im Client ergänzt hat (Anhänge, Empfänger, Text).
+     */
+    private async handleSavePersonalDraft(request: JsonRpcRequest): Promise<JsonRpcResponse> {
+        const id   = request.id ?? null;
+        const args = { ...((request.params?.arguments as Record<string, unknown>) || {}) };
+        const fehler = (message: string): JsonRpcResponse => ({
+            jsonrpc: '2.0', id,
+            result: { isError: true, content: [{ type: 'text', text: JSON.stringify({ error: true, message }) }] },
+        } as JsonRpcResponse);
+
+        if (!this.masterKey) return fehler('Vault is locked: draft cannot be encrypted');
+
+        const draftId = typeof args.draft_id === 'string' && args.draft_id !== '' ? args.draft_id : null;
+
+        try {
+            let bisher: DraftContent = {};
+            if (draftId) {
+                const alt = await this.forwardToServer({
+                    jsonrpc: '2.0', id: 0, method: 'tools/call',
+                    params: { name: 'get_draft', arguments: { draft_id: draftId } },
+                });
+                const altDaten = this.parseToolContent(alt);
+                if (alt.error || !altDaten || altDaten.error || typeof altDaten.encrypted_content !== 'string') {
+                    return fehler(`Draft ${draftId} not found`);
+                }
+                bisher = await decryptDraft(altDaten.encrypted_content, this.masterKey);
+            }
+
+            // Anhänge: dieselben Aliase wie bei send_email
+            const anhangListe = args.attachments ?? args.attachment_paths ?? args.attachment_path;
+            let neueAnhaenge: DraftAttachment[] = [];
+            if (anhangListe !== undefined) {
+                const liste = (Array.isArray(anhangListe) ? anhangListe : [anhangListe]).map(a =>
+                    typeof a === 'string' ? { file_path: a } : (a as Record<string, unknown>));
+                neueAnhaenge = (await this.loadAttachmentFiles(liste)).map(a => ({
+                    id: webcrypto.randomUUID().toUpperCase(),
+                    name: a.filename, size: a.size, type: a.mimetype, content: a.content,
+                }));
+            }
+
+            let body = args.body;
+            if (!draftId && typeof body === 'string' && this.signatureAutoInsertNew) {
+                body = this.appendSignature(body);
+            }
+
+            const inhalt = mergeDraft(bisher, {
+                subject: args.subject, body, to: args.to, cc: args.cc, bcc: args.bcc,
+                from_identity: args.from_identity,
+            }, neueAnhaenge);
+
+            const encrypted_content = await encryptDraft(inhalt, this.masterKey);
+            const antwort = await this.forwardToServer({
+                ...request,
+                params: {
+                    ...request.params,
+                    arguments: draftId ? { encrypted_content, draft_id: draftId } : { encrypted_content },
+                },
+            });
+            process.stderr.write(`[proxy] save_draft: encrypted locally (${draftId ? 'update' : 'new'})\n`);
+            return antwort;
+        } catch (e) {
+            return fehler(`Draft not saved: ${(e as Error).message}`);
+        }
+    }
+
+    /** Entwurf für die KI lesbar machen; bei Fehler Grund statt Geheimtext. */
+    private async tryDecryptDraft(draft: Record<string, unknown>): Promise<Record<string, unknown>> {
+        if (!this.masterKey || typeof draft.encrypted_content !== 'string') return draft;
+        try {
+            return draftForAi(draft, await decryptDraft(draft.encrypted_content, this.masterKey));
+        } catch (e) {
+            const { encrypted_content: _geheim, ...rest } = draft;
+            return { ...rest, decrypt_error: (e as Error).message };
+        }
+    }
+
     /**
      * Inspect a tool result and decrypt encrypted fields if found
      */
@@ -538,9 +643,16 @@ export class McpDecryptingProxy {
             modified = true;
         }
 
-        // Decrypt draft attachment and save to disk
-        if (toolName === 'get_draft' && data.attachments && Array.isArray(data.attachments)) {
-            // Drafts have inline attachments — same decryption logic
+        // Entwürfe entschlüsseln (list_drafts, get_draft)
+        if (toolName === 'list_drafts' && Array.isArray(data.drafts)) {
+            data.drafts = await Promise.all(
+                (data.drafts as Record<string, unknown>[]).map(d => this.tryDecryptDraft(d))
+            );
+            modified = true;
+        }
+        if (toolName === 'get_draft' && typeof data.encrypted_content === 'string') {
+            data = await this.tryDecryptDraft(data);
+            modified = true;
         }
 
         // Decrypt folder names (list_folders)
