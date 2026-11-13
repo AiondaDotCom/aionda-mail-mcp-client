@@ -270,11 +270,33 @@ Without keys the client is a plain MCP transport and returns ciphertext as-is.
 | ⬇ Read | `list_emails`, `read_email`, `search_emails`, `get_attachment`, `list_folders`, `list_events`, `list_tasks`, … | Decrypts subjects, bodies, folder names, calendar and task fields; attachments are decrypted to a temp file |
 | ⬆ Write | `create_folder`, `create_event`, `update_event`, `create_task`, `update_task`, `create_task_list` | Encrypts names and fields before they leave your machine |
 | ✉️ Send | `send_email`, `reply_email`, `forward_email` | Passed to the server **readable**: it has to deliver the mail over SMTP. The stored copy is encrypted by the server |
-| 📝 Drafts | `save_draft`, `get_draft`, `list_drafts` | With a personal key the draft is **encrypted in the proxy** with your master key (same format as the web app and the native apps), so it shows up in your Drafts folder and you can keep editing it there. `get_draft`/`list_drafts` come back decrypted. To continue a draft pass its `draft_id`: only the fields you send change; recipients, text and attachments you added in the native apps stay (the web composer does not restore draft attachments yet) |
+| 📝 Drafts | `save_draft`, `get_draft`, `list_drafts` | With a personal key the draft is **encrypted in the proxy** with your master key (same format as the web app and the native apps), so it shows up in your Drafts folder and you can keep editing it there. `get_draft`/`list_drafts` come back decrypted. To continue a draft pass its `draft_id`: only the fields you send change, so recipients, text and attachments added in the apps stay. Empty values mean "unchanged"; to clear a field name it in `clear_fields` (e.g. `["cc"]`) |
 | 📥 Deliver | `deliver_to_shared_folder` | Wraps the message key with the folder key; refuses mails that still use the master key |
 | 🔁 Copy | `move_email` from a folder shared with you into your own mailbox | Re-encrypts the message for your own keys (hybrid KEM) |
 | 🔎 Search | `search_emails` | Runs **in the proxy**, so the server never sees your search terms |
 | 📄 Export | `export_email_pdf` | Renders the decrypted mail to PDF locally (headless Chrome) |
+
+### Copying from a shared folder after mailbox key rotation
+
+The proxy sends `target_x25519_public_key` and `target_mlkem_public_key`
+(hex encoded) alongside `new_wrapped_ephemeral_key`. These are the exact
+public keys used to encapsulate that message key. The server compares both
+against the current mailbox keys while holding the mailbox row lock through
+the copy transaction. A previous key retained for reading is not a valid
+copy target.
+
+- Error `192` (`VAULT_TARGET_KEY_BINDING_REQUIRED`): update to a client build
+  that sends both target keys, restart it, and retry. Older clients without
+  this binding are rejected, including when rotation history is unknown.
+  Missing history cannot prove that a first rotation was never rolled back.
+- Error `193` (`VAULT_TARGET_KEY_CHANGED`): restart the client to load the
+  current mailbox keys, then retry. If the mailbox was disabled, re-enable
+  it first. The rejected request did not create a copy.
+
+The proxy returns these errors unchanged and does not automatically repeat
+copy mutations. The existing JSON-RPC `/mcp` transport remains unchanged.
+Shipped since 0.17.2, so clients are ready before the server requirement is
+rolled out.
 
 ---
 

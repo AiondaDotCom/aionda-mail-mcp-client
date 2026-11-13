@@ -1,6 +1,6 @@
 {
   "name": "@aiondadotcom/mail-mcp-client",
-  "version": "0.17.1",
+  "version": "0.17.2",
   "description": "Zero-knowledge MCP proxy for Aionda Mail: lets AI agents read and write your end-to-end encrypted mailbox while all decryption happens locally (X25519 + ML-KEM-1024).",
   "author": "Aionda GmbH <stephan.ferraro@aionda.com>",
   "license": "Apache-2.0",

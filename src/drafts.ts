@@ -64,35 +64,42 @@ const IV_LAENGE = 12;
 export function parseAddresses(value: unknown, feld: string): DraftAddress[] {
     if (value === undefined || value === null || value === '') return [];
 
-    const teile: unknown[] = Array.isArray(value)
-        ? value
-        : typeof value === 'string'
-            ? value.split(/[,;]/)
-            : [value];
+    const saeubern = (t: string): string => t.replace(/^[\s\u00A0]+|[\s\u00A0]+$/gu, '');
+    const istAdresse = (t: string): boolean => /^[^\s@]+@[^\s@]+$/u.test(t);
+
+    // Einzelnes Objekt {email, name} wie eine Liste mit einem Eintrag (wie der Server).
+    const liste: unknown = value && typeof value === 'object' && !Array.isArray(value) && 'email' in value
+        ? [value] : value;
+    // Trennen an , oder ; - nicht innerhalb von Anführungszeichen („"Müller, Hans" <m@x>“).
+    const teile: unknown[] = Array.isArray(liste)
+        ? liste
+        : typeof liste === 'string'
+            ? liste.split(/[,;](?=(?:[^"]*"[^"]*")*[^"]*$)/u)
+            : [liste];
 
     const ergebnis: DraftAddress[] = [];
     for (const teil of teile) {
         if (teil && typeof teil === 'object') {
-            const email = (teil as Record<string, unknown>).email;
-            const name  = (teil as Record<string, unknown>).name;
-            if (typeof email !== 'string' || !email.includes('@')) {
+            const rohEmail = (teil as Record<string, unknown>).email;
+            const rohName  = (teil as Record<string, unknown>).name;
+            const email = typeof rohEmail === 'string' ? saeubern(rohEmail) : '';
+            const name  = typeof rohName === 'string' ? saeubern(rohName) : '';
+            if (!istAdresse(email)) {
                 throw new Error(`${feld}: entry without valid email`);
             }
-            ergebnis.push(typeof name === 'string' && name.trim() !== ''
-                ? { email: email.trim(), name: name.trim() }
-                : { email: email.trim() });
+            ergebnis.push(name !== '' ? { email, name } : { email });
             continue;
         }
         if (typeof teil !== 'string') {
             throw new Error(`${feld}: unsupported address value`);
         }
-        const roh = teil.trim();
+        const roh = saeubern(teil);
         if (roh === '') continue;
-        const mitName = /^(.*)<([^<>\s]+@[^<>\s]+)>$/.exec(roh);
+        const mitName = /^(.*)<([^<>\s]+@[^<>\s]+)>$/u.exec(roh);
         if (mitName) {
-            const name = mitName[1].trim().replace(/^"(.*)"$/, '$1').trim();
+            const name = saeubern(saeubern(mitName[1]).replace(/^"(.*)"$/u, '$1'));
             ergebnis.push(name !== '' ? { email: mitName[2], name } : { email: mitName[2] });
-        } else if (/^[^\s@]+@[^\s@]+$/.test(roh)) {
+        } else if (istAdresse(roh)) {
             ergebnis.push({ email: roh });
         } else {
             throw new Error(`${feld}: '${roh}' is not an email address`);
@@ -101,28 +108,56 @@ export function parseAddresses(value: unknown, feld: string): DraftAddress[] {
     return ergebnis;
 }
 
+/** Felder, die `clear_fields` ausdrücklich leeren darf. */
+export const LEERBARE_FELDER = ['subject', 'body', 'to', 'cc', 'bcc', 'from_identity'] as const;
+
+/** Leerer Wert = „nicht angegeben": Modelle schicken optionale Felder oft leer mit. */
+function istLeer(wert: unknown): boolean {
+    return wert === undefined || wert === null
+        || (typeof wert === 'string' && wert.replace(/[\s\u00A0]+/gu, '') === '')
+        || (Array.isArray(wert) && wert.length === 0);
+}
+
 /**
  * Neuen Stand eines Entwurfs bilden. Nur übergebene Felder ändern sich;
  * alles andere (Anhänge, die der Nutzer im Client ergänzt hat, Priorität,
  * fremde Felder) bleibt erhalten. Neue Anhänge kommen dazu.
+ *
+ * Ein LEER übergebenes Feld ändert nichts - sonst würde ein Modell, das
+ * `cc: ""` mitschickt, die Kopieempfänger des Nutzers löschen. Leeren geht
+ * nur ausdrücklich über `leeren` (Werkzeugparameter `clear_fields`).
  */
 export function mergeDraft(
     bisher: DraftContent,
     aenderung: DraftChanges,
     neueAnhaenge: DraftAttachment[],
-    jetzt: Date = new Date()
+    jetzt: Date = new Date(),
+    leeren: readonly unknown[] = []
 ): DraftContent {
     const neu: DraftContent = { ...bisher };
 
+    for (const feld of leeren) {
+        if (!(LEERBARE_FELDER as readonly unknown[]).includes(feld)) {
+            throw new Error(`clear_fields: '${String(feld)}' cannot be cleared (allowed: ${LEERBARE_FELDER.join(', ')})`);
+        }
+        if (!istLeer(aenderung[feld as keyof DraftChanges])) {
+            throw new Error(`clear_fields: '${String(feld)}' is cleared and set at the same time`);
+        }
+    }
+
     for (const feld of ['subject', 'body', 'from_identity'] as const) {
         const wert = aenderung[feld];
-        if (wert === undefined) continue;
+        if (leeren.includes(feld)) { neu[feld] = ''; continue; }
+        if (istLeer(wert)) continue;
         if (typeof wert !== 'string') throw new Error(`${feld} must be a string`);
         neu[feld] = wert;
     }
     for (const feld of ['to', 'cc', 'bcc'] as const) {
-        if (aenderung[feld] === undefined) continue;
-        neu[feld] = parseAddresses(aenderung[feld], feld);
+        if (leeren.includes(feld)) { neu[feld] = []; continue; }
+        if (istLeer(aenderung[feld])) continue;
+        const adressen = parseAddresses(aenderung[feld], feld);
+        // „ , “ ergibt keine Adresse - das ist „leer“, nicht „leeren“ (wie der Server).
+        if (adressen.length > 0) neu[feld] = adressen;
     }
     for (const feld of ['to', 'cc', 'bcc'] as const) {
         if (neu[feld] === undefined) neu[feld] = [];

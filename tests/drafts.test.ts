@@ -46,6 +46,13 @@ describe('Entwurfsformat', () => {
         expect(() => parseAddresses('kein Empfänger', 'to')).toThrow(/to/);
     });
 
+    it('zerlegt Adressen wie der Server: Komma im Namen, Einzelobjekt, strenge Objektadresse, geschütztes Leerzeichen', () => {
+        expect(parseAddresses('"Müller, Hans" <m@x.de>, b@x.de', 'to')).toEqual([{ email: 'm@x.de', name: 'Müller, Hans' }, { email: 'b@x.de' }]);
+        expect(parseAddresses({ email: 'e@x.de', name: 'E' }, 'bcc')).toEqual([{ email: 'e@x.de', name: 'E' }]);
+        expect(() => parseAddresses([{ email: 'x@' }], 'cc')).toThrow(/valid email/);
+        expect(mergeDraft({ subject: 'S', cc: [{ email: 'c@x.de' }] }, { cc: '\u00A0' }, []).cc).toEqual([{ email: 'c@x.de' }]);
+    });
+
     it('ändert beim Fortschreiben nur übergebene Felder und behält Anhänge', () => {
         const bisher = {
             subject: 'Alt', body: 'alt', to: [{ email: 'a@x.de' }], priority: 'high',
@@ -58,6 +65,33 @@ describe('Entwurfsformat', () => {
         expect(neu.priority).toBe('high');
         expect(neu.attachments?.map(a => a.name)).toEqual(['nutzer.pdf', 'ki.txt']);
         expect(() => mergeDraft({}, {}, [])).toThrow(/subject or body/);
+    });
+});
+
+describe('Leere Felder beim Fortschreiben', () => {
+    const bisher = { subject: 'Betreff', body: 'Text', to: [{ email: 'a@x.de' }], cc: [{ email: 'c@x.de' }], from_identity: 'ich@x.de' };
+
+    it('lässt leer übergebene Felder unverändert', () => {
+        const neu = mergeDraft(bisher, { subject: '', cc: '', bcc: [], to: [], from_identity: '', body: 'Neu' }, []);
+        expect(neu).toMatchObject({ subject: 'Betreff', body: 'Neu', to: [{ email: 'a@x.de' }], cc: [{ email: 'c@x.de' }], from_identity: 'ich@x.de' });
+    });
+
+    it('leert nur, was in clear_fields steht', () => {
+        const neu = mergeDraft(bisher, {}, [], new Date(), ['cc', 'from_identity']);
+        expect(neu.cc).toEqual([]);
+        expect(neu.from_identity).toBe('');
+        expect(neu.to).toEqual([{ email: 'a@x.de' }]);
+    });
+
+    it('behandelt Leerraum und reine Trenner als „unverändert“ wie der Server', () => {
+        const neu = mergeDraft(bisher, { to: '   ', cc: ' , ', body: 'x' }, []);
+        expect(neu.to).toEqual([{ email: 'a@x.de' }]);
+        expect(neu.cc).toEqual([{ email: 'c@x.de' }]);
+    });
+
+    it('lehnt unbekannte oder widersprüchliche clear_fields ab', () => {
+        expect(() => mergeDraft(bisher, {}, [], new Date(), ['attachments'])).toThrow(/cannot be cleared/);
+        expect(() => mergeDraft(bisher, { cc: 'd@x.de' }, [], new Date(), ['cc'])).toThrow(/same time/);
     });
 });
 
@@ -140,6 +174,24 @@ describe('Proxy save_draft mit persönlichem Schlüssel', () => {
         expect(einzeln.attachments).toEqual([{ name: 'n.pdf', size: 2, type: 'application/pdf' }]);
         const liste = await rufe('list_drafts', {});
         expect((liste.drafts as Record<string, unknown>[])[0]).toMatchObject({ subject: 'S' });
+    });
+
+    it('nimmt clear_fields auch als einzelne Zeichenkette und ignoriert leere Felder', async () => {
+        const { key, ablage, rufe } = aufbau();
+        ablage.set('d-1', await encryptDraft({ subject: 'S', body: 'B', to: [{ email: 'a@x.de' }], cc: [{ email: 'c@x.de' }] }, key));
+        await rufe('save_draft', { draft_id: 'd-1', subject: '', to: '', clear_fields: 'cc' });
+        const inhalt = await decryptDraft(ablage.get('d-1')!, key);
+        expect(inhalt).toMatchObject({ subject: 'S', to: [{ email: 'a@x.de' }], cc: [] });
+    });
+
+    it('lehnt eine draft_id ab, die keine Zeichenkette ist, statt still neu anzulegen', async () => {
+        const { ablage, anServer, rufe } = aufbau();
+        const r = await rufe('save_draft', { draft_id: 42, body: 'x' });
+        expect(r.error).toBe(true);
+        expect(anServer.some(a => a.name === 'save_draft')).toBe(false);
+        expect(ablage.size).toBe(0);
+        const leer = await rufe('save_draft', { body: 'x', clear_fields: null });
+        expect(leer.draft_id).toBe('draft-1');
     });
 
     it('meldet einen unbekannten Entwurf als Fehler und speichert nichts', async () => {
