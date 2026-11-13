@@ -76,6 +76,12 @@ describe('Leere Felder beim Fortschreiben', () => {
         expect(neu.to).toEqual([{ email: 'a@x.de' }]);
     });
 
+    it('behandelt Leerraum und reine Trenner als „unverändert“ wie der Server', () => {
+        const neu = mergeDraft(bisher, { to: '   ', cc: ' , ', body: 'x' }, []);
+        expect(neu.to).toEqual([{ email: 'a@x.de' }]);
+        expect(neu.cc).toEqual([{ email: 'c@x.de' }]);
+    });
+
     it('lehnt unbekannte oder widersprüchliche clear_fields ab', () => {
         expect(() => mergeDraft(bisher, {}, [], new Date(), ['attachments'])).toThrow(/cannot be cleared/);
         expect(() => mergeDraft(bisher, { cc: 'd@x.de' }, [], new Date(), ['cc'])).toThrow(/same time/);
@@ -169,6 +175,16 @@ describe('Proxy save_draft mit persönlichem Schlüssel', () => {
         await rufe('save_draft', { draft_id: 'd-1', subject: '', to: '', clear_fields: 'cc' });
         const inhalt = await decryptDraft(ablage.get('d-1')!, key);
         expect(inhalt).toMatchObject({ subject: 'S', to: [{ email: 'a@x.de' }], cc: [] });
+    });
+
+    it('lehnt eine draft_id ab, die keine Zeichenkette ist, statt still neu anzulegen', async () => {
+        const { ablage, anServer, rufe } = aufbau();
+        const r = await rufe('save_draft', { draft_id: 42, body: 'x' });
+        expect(r.error).toBe(true);
+        expect(anServer.some(a => a.name === 'save_draft')).toBe(false);
+        expect(ablage.size).toBe(0);
+        const leer = await rufe('save_draft', { body: 'x', clear_fields: null });
+        expect(leer.draft_id).toBe('draft-1');
     });
 
     it('meldet einen unbekannten Entwurf als Fehler und speichert nichts', async () => {

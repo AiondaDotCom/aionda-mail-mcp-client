@@ -541,6 +541,9 @@ export class McpDecryptingProxy {
 
         if (!this.masterKey) return fehler('Vault is locked: draft cannot be encrypted');
 
+        if (args.draft_id !== undefined && args.draft_id !== null && args.draft_id !== '' && typeof args.draft_id !== 'string') {
+            return fehler('Draft not saved: draft_id must be a string');
+        }
         const draftId = typeof args.draft_id === 'string' && args.draft_id !== '' ? args.draft_id : null;
 
         try {
@@ -581,7 +584,8 @@ export class McpDecryptingProxy {
                 subject: args.subject, body, to: args.to, cc: args.cc, bcc: args.bcc,
                 from_identity: args.from_identity,
             }, neueAnhaenge, new Date(),
-                args.clear_fields === undefined ? [] : Array.isArray(args.clear_fields) ? args.clear_fields : [args.clear_fields]);
+                args.clear_fields === undefined || args.clear_fields === null || args.clear_fields === ''
+                    ? [] : Array.isArray(args.clear_fields) ? args.clear_fields : [args.clear_fields]);
 
             const encrypted_content = await encryptDraft(inhalt, this.masterKey);
             const antwort = await this.forwardToServer({

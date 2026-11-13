@@ -106,7 +106,8 @@ export const LEERBARE_FELDER = ['subject', 'body', 'to', 'cc', 'bcc', 'from_iden
 
 /** Leerer Wert = „nicht angegeben": Modelle schicken optionale Felder oft leer mit. */
 function istLeer(wert: unknown): boolean {
-    return wert === undefined || wert === null || wert === ''
+    return wert === undefined || wert === null
+        || (typeof wert === 'string' && wert.trim() === '')
         || (Array.isArray(wert) && wert.length === 0);
 }
 
@@ -147,7 +148,9 @@ export function mergeDraft(
     for (const feld of ['to', 'cc', 'bcc'] as const) {
         if (leeren.includes(feld)) { neu[feld] = []; continue; }
         if (istLeer(aenderung[feld])) continue;
-        neu[feld] = parseAddresses(aenderung[feld], feld);
+        const adressen = parseAddresses(aenderung[feld], feld);
+        // „ , “ ergibt keine Adresse - das ist „leer“, nicht „leeren“ (wie der Server).
+        if (adressen.length > 0) neu[feld] = adressen;
     }
     for (const feld of ['to', 'cc', 'bcc'] as const) {
         if (neu[feld] === undefined) neu[feld] = [];
