@@ -101,27 +101,52 @@ export function parseAddresses(value: unknown, feld: string): DraftAddress[] {
     return ergebnis;
 }
 
+/** Felder, die `clear_fields` ausdrücklich leeren darf. */
+export const LEERBARE_FELDER = ['subject', 'body', 'to', 'cc', 'bcc', 'from_identity'] as const;
+
+/** Leerer Wert = „nicht angegeben": Modelle schicken optionale Felder oft leer mit. */
+function istLeer(wert: unknown): boolean {
+    return wert === undefined || wert === null || wert === ''
+        || (Array.isArray(wert) && wert.length === 0);
+}
+
 /**
  * Neuen Stand eines Entwurfs bilden. Nur übergebene Felder ändern sich;
  * alles andere (Anhänge, die der Nutzer im Client ergänzt hat, Priorität,
  * fremde Felder) bleibt erhalten. Neue Anhänge kommen dazu.
+ *
+ * Ein LEER übergebenes Feld ändert nichts - sonst würde ein Modell, das
+ * `cc: ""` mitschickt, die Kopieempfänger des Nutzers löschen. Leeren geht
+ * nur ausdrücklich über `leeren` (Werkzeugparameter `clear_fields`).
  */
 export function mergeDraft(
     bisher: DraftContent,
     aenderung: DraftChanges,
     neueAnhaenge: DraftAttachment[],
-    jetzt: Date = new Date()
+    jetzt: Date = new Date(),
+    leeren: readonly unknown[] = []
 ): DraftContent {
     const neu: DraftContent = { ...bisher };
 
+    for (const feld of leeren) {
+        if (!(LEERBARE_FELDER as readonly unknown[]).includes(feld)) {
+            throw new Error(`clear_fields: '${String(feld)}' cannot be cleared (allowed: ${LEERBARE_FELDER.join(', ')})`);
+        }
+        if (!istLeer(aenderung[feld as keyof DraftChanges])) {
+            throw new Error(`clear_fields: '${String(feld)}' is cleared and set at the same time`);
+        }
+    }
+
     for (const feld of ['subject', 'body', 'from_identity'] as const) {
         const wert = aenderung[feld];
-        if (wert === undefined) continue;
+        if (leeren.includes(feld)) { neu[feld] = ''; continue; }
+        if (istLeer(wert)) continue;
         if (typeof wert !== 'string') throw new Error(`${feld} must be a string`);
         neu[feld] = wert;
     }
     for (const feld of ['to', 'cc', 'bcc'] as const) {
-        if (aenderung[feld] === undefined) continue;
+        if (leeren.includes(feld)) { neu[feld] = []; continue; }
+        if (istLeer(aenderung[feld])) continue;
         neu[feld] = parseAddresses(aenderung[feld], feld);
     }
     for (const feld of ['to', 'cc', 'bcc'] as const) {

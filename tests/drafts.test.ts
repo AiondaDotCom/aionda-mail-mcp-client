@@ -61,6 +61,27 @@ describe('Entwurfsformat', () => {
     });
 });
 
+describe('Leere Felder beim Fortschreiben', () => {
+    const bisher = { subject: 'Betreff', body: 'Text', to: [{ email: 'a@x.de' }], cc: [{ email: 'c@x.de' }], from_identity: 'ich@x.de' };
+
+    it('lässt leer übergebene Felder unverändert', () => {
+        const neu = mergeDraft(bisher, { subject: '', cc: '', bcc: [], to: [], from_identity: '', body: 'Neu' }, []);
+        expect(neu).toMatchObject({ subject: 'Betreff', body: 'Neu', to: [{ email: 'a@x.de' }], cc: [{ email: 'c@x.de' }], from_identity: 'ich@x.de' });
+    });
+
+    it('leert nur, was in clear_fields steht', () => {
+        const neu = mergeDraft(bisher, {}, [], new Date(), ['cc', 'from_identity']);
+        expect(neu.cc).toEqual([]);
+        expect(neu.from_identity).toBe('');
+        expect(neu.to).toEqual([{ email: 'a@x.de' }]);
+    });
+
+    it('lehnt unbekannte oder widersprüchliche clear_fields ab', () => {
+        expect(() => mergeDraft(bisher, {}, [], new Date(), ['attachments'])).toThrow(/cannot be cleared/);
+        expect(() => mergeDraft(bisher, { cc: 'd@x.de' }, [], new Date(), ['cc'])).toThrow(/same time/);
+    });
+});
+
 describe('Proxy save_draft mit persönlichem Schlüssel', () => {
     function aufbau() {
         const key = schluessel();
@@ -140,6 +161,14 @@ describe('Proxy save_draft mit persönlichem Schlüssel', () => {
         expect(einzeln.attachments).toEqual([{ name: 'n.pdf', size: 2, type: 'application/pdf' }]);
         const liste = await rufe('list_drafts', {});
         expect((liste.drafts as Record<string, unknown>[])[0]).toMatchObject({ subject: 'S' });
+    });
+
+    it('nimmt clear_fields auch als einzelne Zeichenkette und ignoriert leere Felder', async () => {
+        const { key, ablage, rufe } = aufbau();
+        ablage.set('d-1', await encryptDraft({ subject: 'S', body: 'B', to: [{ email: 'a@x.de' }], cc: [{ email: 'c@x.de' }] }, key));
+        await rufe('save_draft', { draft_id: 'd-1', subject: '', to: '', clear_fields: 'cc' });
+        const inhalt = await decryptDraft(ablage.get('d-1')!, key);
+        expect(inhalt).toMatchObject({ subject: 'S', to: [{ email: 'a@x.de' }], cc: [] });
     });
 
     it('meldet einen unbekannten Entwurf als Fehler und speichert nichts', async () => {

@@ -580,7 +580,8 @@ export class McpDecryptingProxy {
             const inhalt = mergeDraft(bisher, {
                 subject: args.subject, body, to: args.to, cc: args.cc, bcc: args.bcc,
                 from_identity: args.from_identity,
-            }, neueAnhaenge);
+            }, neueAnhaenge, new Date(),
+                args.clear_fields === undefined ? [] : Array.isArray(args.clear_fields) ? args.clear_fields : [args.clear_fields]);
 
             const encrypted_content = await encryptDraft(inhalt, this.masterKey);
             const antwort = await this.forwardToServer({
@@ -1575,8 +1576,14 @@ export class McpDecryptingProxy {
         // 7cbc485d an genau EINER Stelle - sonst waere es hier und bei der
         // Zustellung in einen geteilten Ordner zweimal ausgeschrieben, und wer
         // die Reihenfolge einmal korrigiert, korrigiert sie dort nicht mit.
+        // #53a45a9d: Bind the envelope to exactly the keys used here, even if
+        // another operation refreshes the proxy's cached keys while awaiting.
+        const targetKeys = {
+            x25519: this.publicKeys!.x25519.slice(),
+            mlkem: this.publicKeys!.mlkem.slice(),
+        };
         const packedHex = await packWrappedKeyHex(
-            ephemeralKey, this.publicKeys!.x25519, this.publicKeys!.mlkem
+            ephemeralKey, targetKeys.x25519, targetKeys.mlkem
         );
         const packed = fromHex(packedHex);
 
@@ -1589,14 +1596,21 @@ export class McpDecryptingProxy {
                     email_uuid: emailUuid,
                     target_folder: targetFolder,
                     new_wrapped_ephemeral_key: toHex(packed),
+                    target_x25519_public_key: toHex(targetKeys.x25519),
+                    target_mlkem_public_key: toHex(targetKeys.mlkem),
                 },
             },
         });
 
         const copyData = this.parseToolContent(copyResp);
-        process.stderr.write(`[proxy] Cross-vault copy complete: ${JSON.stringify(copyData)}\n`);
+        if (copyResp.error || (copyResp.result as McpToolResult)?.isError
+            || copyData?.success === false || copyData?.error === true) {
+            process.stderr.write('[proxy] Cross-vault copy rejected; no success reported\n');
+        } else {
+            process.stderr.write('[proxy] Cross-vault copy complete\n');
+        }
 
-        // Return as if move_email succeeded (for AI transparency)
+        // Preserve the server result, including stable rejection codes.
         return copyResp;
     }
 
