@@ -49,21 +49,25 @@ describe('AiondaMailClient', () => {
             headers: new Headers(),
             json: () => Promise.resolve({
                 jsonrpc: '2.0', id: 3,
+                // Echte Serverform: Nutzlast als JSON-Text (vorher `result.data`,
+                // das der Server nie liefert).
                 result: {
-                    success: true,
-                    data: {
-                        deas: [{
-                            dea_uid: '123',
-                            address: 'test@trashmail.com',
-                            destination: 'real@gmail.com',
-                            from_name: '',
-                            forwards: -1,
-                            masquerade: 0,
-                            notify: 1,
-                            vault_store: 1,
-                            created_at: '2026-01-01',
-                        }],
-                    },
+                    content: [{
+                        type: 'text',
+                        text: JSON.stringify({
+                            deas: [{
+                                dea_uid: '123',
+                                address: 'test@trashmail.com',
+                                destination: 'real@gmail.com',
+                                from_name: '',
+                                forwards: -1,
+                                masquerade: 0,
+                                notify: 1,
+                                vault_store: 1,
+                                created_at: '2026-01-01',
+                            }],
+                        }),
+                    }],
                 },
             }),
         });

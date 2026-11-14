@@ -10,10 +10,10 @@ export type {
     McpToolDefinition,
     McpPropertySchema,
     McpToolResult,
-} from './mcp-protocol';
+} from './mcp-protocol.js';
 
 export type {
-    ListFoldersInput, ListFoldersOutput, EncryptedFolderInfo,
+    ListFoldersInput, ListFoldersOutput, EncryptedFolderInfo, SystemFolderInfo,
     ListEmailsInput, ListEmailsOutput, EncryptedEmailSummary,
     ReadEmailInput, ReadEmailOutput, EncryptedAttachmentInfo,
     MarkReadInput, MarkReadOutput,
@@ -42,7 +42,11 @@ export type {
     EventTopic,
     EventSubscribeInput, EventSubscribeOutput,
     GetMissedEventsInput, GetMissedEventsOutput, EncryptedEventEntry,
-} from './tools';
+    OutgoingAttachment, IdempotencyOption,
+    McpKeyLimits, McpKeyInfo, ListMcpKeysOutput,
+    McpKeyAccessLogEntry, McpKeyAlert, McpKeyAccessLogOutput,
+    ListEmployeeMcpKeysOutput,
+} from './tools.js';
 
 export type {
     EncryptedEmail,
@@ -50,12 +54,12 @@ export type {
     DecryptedEmail,
     DecryptedAttachmentMeta,
     DecryptedAttachment,
-} from './email';
+} from './email.js';
 
 export type {
     EncryptedFolder,
     DecryptedFolder,
-} from './folder';
+} from './folder.js';
 
 export type {
     EventType,
@@ -66,7 +70,7 @@ export type {
     EventSubscription,
     MissedEventsOutput,
     EventHandler,
-} from './events';
+} from './events.js';
 
-export { ErrorCodes } from './errors';
-export type { ErrorCode } from './errors';
+export { ErrorCodes } from './errors.js';
+export type { ErrorCode } from './errors.js';

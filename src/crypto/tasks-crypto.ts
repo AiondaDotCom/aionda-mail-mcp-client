@@ -24,8 +24,8 @@
 import { webcrypto } from 'node:crypto';
 import type { webcrypto as WebCryptoNs } from 'node:crypto';
 
-import { fromBase64, toBase64 } from './encoding';
-import { decryptClientAesGcm, encryptClientAesGcm } from './aes-gcm';
+import { fromBase64, toBase64 } from './encoding.js';
+import { decryptClientAesGcm, encryptClientAesGcm } from './aes-gcm.js';
 
 /** HKDF-Label des Aufgaben-Moduls. */
 export const TASKS_HKDF_INFO = 'trashmail-tasks-v1';

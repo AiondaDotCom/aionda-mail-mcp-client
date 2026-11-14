@@ -7,8 +7,8 @@
  * @author Stephan Ferraro
  * @company Aionda GmbH
  */
-import { McpDecryptingProxy } from './proxy';
-import type { ProxyConfig } from './proxy';
+import { McpDecryptingProxy } from './proxy.js';
+import type { ProxyConfig } from './proxy.js';
 
 interface JsonRpcRequest {
     jsonrpc: '2.0';

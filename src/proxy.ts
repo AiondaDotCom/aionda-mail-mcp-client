@@ -15,17 +15,17 @@ import { webcrypto } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { decryptEmail, decryptFieldBytes, resolveContentKey } from './crypto/email-decryptor';
-import { decryptAesGcm, decryptPhpAesGcm, decryptClientAesGcm, encryptPhpAesGcm, decryptVaultData, encryptVaultData } from './crypto/aes-gcm';
-import { decompress } from './crypto/decompression';
-import { isBucketPadded, unpadFromBucket } from './crypto/bucket-padding';
-import { fromBase64, fromHex, toBase64, toHex } from './crypto/encoding';
-import { hybridDecapsulate } from './crypto/hybrid-kem';
-import { decryptSharedFolderKey } from './crypto/shared-folder-key';
-import { packWrappedKeyHex } from './crypto/wrapped-key-pack';
-import { unwrapMasterKey } from './crypto/mcp-master-key';
-import { decryptDraft, draftForAi, encryptDraft, mergeDraft } from './drafts';
-import type { DraftAttachment, DraftContent } from './drafts';
+import { decryptEmail, resolveContentKey } from './crypto/email-decryptor.js';
+import { decryptAesGcm, decryptPhpAesGcm, decryptClientAesGcm, encryptPhpAesGcm, decryptVaultData, encryptVaultData } from './crypto/aes-gcm.js';
+import { decompress } from './crypto/decompression.js';
+import { isBucketPadded, unpadFromBucket } from './crypto/bucket-padding.js';
+import { fromBase64, fromHex, toBase64, toHex } from './crypto/encoding.js';
+import { hybridDecapsulate } from './crypto/hybrid-kem.js';
+import { decryptSharedFolderKey } from './crypto/shared-folder-key.js';
+import { packWrappedKeyHex } from './crypto/wrapped-key-pack.js';
+import { unwrapMasterKey } from './crypto/mcp-master-key.js';
+import { decryptDraft, draftForAi, encryptDraft, mergeDraft } from './drafts.js';
+import type { DraftAttachment, DraftContent } from './drafts.js';
 import {
     decryptTaskField,
     encryptTaskField,
@@ -34,9 +34,12 @@ import {
     parseSteps,
     unwrapTaskKey,
     wrapTaskKey,
-} from './crypto/tasks-crypto';
-import type { VaultPrivateKeys } from './crypto/email-decryptor';
-import type { EncryptedEmail } from './types/email';
+} from './crypto/tasks-crypto.js';
+import type { VaultPrivateKeys } from './crypto/email-decryptor.js';
+import type { DecryptedEmail, EncryptedEmail } from './types/email.js';
+import { decryptAttachmentRecord } from './crypto/attachment-decryptor.js';
+import type { DecryptedAttachmentWithEmail } from './crypto/attachment-decryptor.js';
+import { mcpErrorFromJsonRpc } from './errors.js';
 
 // ── Types ──
 
@@ -71,6 +74,13 @@ export interface ProxyConfig {
     apiKey: string;
     /** Vault key (tmv_*) for deriving master key */
     vaultKey: string;
+    /**
+     * OCR-Modelle (~15 MB) beim Start im Hintergrund laden (Standard: ja).
+     * Bibliotheksbetrieb schaltet das ab – dort sucht niemand per OCR.
+     */
+    preloadOcr?: boolean;
+    /** Zeitgrenze je Serveranfrage in ms (Standard: keine). */
+    timeout?: number;
 }
 
 // ── Proxy ──
@@ -97,6 +107,8 @@ export class McpDecryptingProxy {
     private privateKeys: VaultPrivateKeys | null = null;
     private sessionId: string | null = null;
     private vaultKey: string;
+    private preloadOcr: boolean;
+    private timeout: number | undefined;
 
     // Own vault public keys (for re-wrapping ephemeral keys)
     private publicKeys: { x25519: Uint8Array; mlkem: Uint8Array } | null = null;
@@ -115,6 +127,8 @@ export class McpDecryptingProxy {
             : config.endpoint + '/mcp';
         this.apiKey = config.apiKey;
         this.vaultKey = config.vaultKey;
+        this.preloadOcr = config.preloadOcr ?? true;
+        this.timeout = config.timeout;
     }
 
     /**
@@ -145,7 +159,7 @@ export class McpDecryptingProxy {
         });
 
         if (initResp.error) {
-            throw new Error(`MCP initialize failed: ${initResp.error.message}`);
+            throw mcpErrorFromJsonRpc({ ...initResp.error, message: `MCP initialize failed: ${initResp.error.message}` });
         }
 
         // 2. Send initialized notification
@@ -157,7 +171,13 @@ export class McpDecryptingProxy {
             params: { name: 'get_vault_keys', arguments: {} },
         });
         if (keysResp.error) {
-            throw new Error(`get_vault_keys failed: ${keysResp.error.message}`);
+            // 🚩 Ein gesperrter oder abgelöster Schlüssel kommt durch `initialize`
+            //    (der Server antwortet dort ohne Fehler) und scheitert erst hier,
+            //    mit data.error_code 194/203 – deshalb typisiert weiterreichen.
+            throw mcpErrorFromJsonRpc(
+                { ...keysResp.error, message: `get_vault_keys failed: ${keysResp.error.message}` },
+                'get_vault_keys'
+            );
         }
 
         const keysRaw  = this.parseToolContent(keysResp);
@@ -229,7 +249,32 @@ export class McpDecryptingProxy {
         await this.loadSignature();
 
         // 7. Pre-load OCR models in background (one-time download, ~15MB)
-        this.preloadOcrModels();
+        if (this.preloadOcr) this.preloadOcrModels();
+    }
+
+    // ── Bibliotheksbetrieb (AiondaMailClient) ──
+
+    /**
+     * Werkzeug ohne Umbau und ohne Entschlüsselung am Server aufrufen – mit
+     * derselben Sitzungserneuerung wie jeder Proxy-Aufruf.
+     */
+    async callServerTool(name: string, args: Record<string, unknown> = {}): Promise<JsonRpcResponse> {
+        return this.forwardToServer({
+            jsonrpc: '2.0', id: 0, method: 'tools/call',
+            params: { name, arguments: args },
+        });
+    }
+
+    /**
+     * Eine Mail (Listeneintrag oder vollständig) entschlüsseln, auch aus einem
+     * geteilten Ordner. Wirft bei jedem Fehlschlag.
+     */
+    async decryptEmailRecord(email: EncryptedEmail): Promise<DecryptedEmail> {
+        if (!this.masterKey || !this.privateKeys) {
+            throw new Error('Vault is locked: call bootstrap() first');
+        }
+        const ephKey = await this.getSharedFolderEphemeralKey(email as unknown as Record<string, unknown>);
+        return decryptEmail(email, this.masterKey, this.privateKeys, ephKey ?? undefined);
     }
 
     /**
@@ -454,6 +499,7 @@ export class McpDecryptingProxy {
             method: 'POST',
             headers,
             body: JSON.stringify(request),
+            ...(this.timeout !== undefined ? { signal: AbortSignal.timeout(this.timeout) } : {}),
         });
 
         // Capture session ID
@@ -480,6 +526,18 @@ export class McpDecryptingProxy {
     ): Promise<{ filename: string; content: string; mimetype: string; size: number }[]> {
         const processedAttachments: { filename: string; content: string; mimetype: string; size: number }[] = [];
         for (const att of attachments) {
+            // Bibliotheksbetrieb: Inhalt liegt schon im Speicher (Base64) –
+            // unverändert weiterreichen, nicht von der Platte lesen.
+            if (!att.file_path && typeof att.content === 'string' && typeof att.filename === 'string') {
+                const size = typeof att.size === 'number' ? att.size : Buffer.from(att.content, 'base64').length;
+                processedAttachments.push({
+                    filename: att.filename,
+                    content: att.content,
+                    mimetype: typeof att.mimetype === 'string' && att.mimetype !== '' ? att.mimetype : 'application/octet-stream',
+                    size,
+                });
+                continue;
+            }
             const filePath = att.file_path as string;
             if (!filePath) continue;
 
@@ -663,10 +721,12 @@ export class McpDecryptingProxy {
             modified = true;
         }
 
-        // Decrypt folder names (list_folders)
-        if (data.folders && Array.isArray(data.folders)) {
-            data.folders = await Promise.all(
-                (data.folders as Record<string, unknown>[]).map(f => this.tryDecryptFolder(f))
+        // Decrypt folder names (list_folders). Der Server liefert die eigenen
+        // Ordner in `custom_folders` (seit trashmail 01ab6cf5d); ein Feld
+        // `folders` gibt es nicht mehr.
+        if (toolName === 'list_folders' && Array.isArray(data.custom_folders)) {
+            data.custom_folders = await Promise.all(
+                (data.custom_folders as Record<string, unknown>[]).map(f => this.tryDecryptFolder(f))
             );
             modified = true;
         }
@@ -1368,72 +1428,42 @@ export class McpDecryptingProxy {
     }
 
     /**
-     * Decrypt attachment fields (filename, content, mimetype)
+     * Anhang entschlüsseln, im Speicher (Bibliotheksbetrieb). Wirft bei jedem
+     * Fehlschlag – kein Rückfall auf Geheimtext.
+     */
+    async decryptAttachmentContent(att: Record<string, unknown>): Promise<DecryptedAttachmentWithEmail> {
+        if (!this.masterKey || !this.privateKeys) {
+            throw new Error('Vault is locked: call bootstrap() first');
+        }
+        return decryptAttachmentRecord(att, this.masterKey, this.privateKeys, (u) => this.sharedFolderKeyForEmail(u));
+    }
+
+    /**
+     * Decrypt attachment fields (filename, content, mimetype) and save to disk (stdio-Betrieb).
      */
     private async tryDecryptAttachment(att: Record<string, unknown>): Promise<Record<string, unknown>> {
         if (!this.masterKey || !this.privateKeys) return att;
         try {
-            // #c2fb3967 - eine Stelle für alle Kapselarten, auch den
-            // abgeleiteten Mail-Schlüssel. Anhänge benutzen den Schlüssel
-            // IHRER Mail, deshalb `email_uuid`.
-            let { key: decryptionKey, clientEncrypted } = await resolveContentKey(
-                att.wrapped_ephemeral_key as string,
-                att.email_uuid as string,
-                this.masterKey,
-                this.privateKeys
-            );
-            const decryptAttField = (hex: string): Promise<Uint8Array> =>
-                decryptFieldBytes(fromHex(hex), decryptionKey, clientEncrypted);
+            const dec = await this.decryptAttachmentContent(att);
 
-            // Anhang aus einem geteilten Ordner: Er gehört zum Schlüssel der
-            // Mail des EIGENTÜMERS, den nur der Ordnerschlüssel liefert. Der
-            // Server legt dafür kein Material an den Anhang; es kommt über die
-            // Mail. AES-GCM ist authentifiziert - der erste Versuch scheitert
-            // laut, er kann nicht falsch „gelingen".
-            if (att.encrypted_filename) {
-                try {
-                    await decryptAttField(att.encrypted_filename as string);
-                } catch (ownKeyError) {
-                    const sharedKey = await this.sharedFolderKeyForEmail(att.email_uuid as string);
-                    if (!sharedKey) throw ownKeyError;
-                    decryptionKey = sharedKey;
-                    clientEncrypted = true;
-                }
-            }
-
-            // Decrypt filename
-            let filename = 'attachment';
-            if (att.encrypted_filename) {
-                filename = new TextDecoder().decode(await decryptAttField(att.encrypted_filename as string));
-            }
-
-            // Decrypt mimetype
-            let mimetype = 'application/octet-stream';
-            if (att.encrypted_mimetype) {
-                mimetype = new TextDecoder().decode(await decryptAttField(att.encrypted_mimetype as string));
-            }
-
-            // Decrypt content and save to disk
+            // Save to /tmp/aionda-mail-attachments/{uuid}/{filename}
             let filePath = '';
             let fileSize = 0;
             if (att.encrypted_content) {
-                const content = await decryptAttField(att.encrypted_content as string);
-
-                // Save to /tmp/aionda-mail-attachments/{uuid}/{filename}
                 const attachDir = join(tmpdir(), 'aionda-mail-attachments', att.uuid as string);
                 mkdirSync(attachDir, { recursive: true });
                 // Sanitize filename (no path traversal)
-                const safeFilename = filename.replace(/[/\\:*?"<>|]/g, '_');
+                const safeFilename = dec.filename.replace(/[/\\:*?"<>|]/g, '_');
                 filePath = join(attachDir, safeFilename);
-                writeFileSync(filePath, content);
-                fileSize = content.length;
+                writeFileSync(filePath, dec.content);
+                fileSize = dec.content.length;
             }
 
             return {
                 uuid: att.uuid,
                 email_uuid: att.email_uuid,
-                filename,
-                mimetype,
+                filename: dec.filename,
+                mimetype: dec.mimetype,
                 file_path: filePath,
                 file_size_bytes: fileSize,
                 note: `File saved to ${filePath}. Use the Read tool to view the file content.`,

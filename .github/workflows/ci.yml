@@ -42,6 +42,9 @@ jobs:
       - run: npm run build
       - name: Unit tests with coverage thresholds (90 % lines)
         run: npm run test:coverage
+      - name: Library import in plain Node ESM (no bundler)
+        # 0.17.2 and earlier failed here with ERR_MODULE_NOT_FOUND (extensionless imports).
+        run: node --input-type=module -e "const m = await import('./dist/esm/index.js'); if (typeof m.AiondaMailClient !== 'function') { console.error('AiondaMailClient missing'); process.exit(1); } console.log('library exports:', Object.keys(m).length);"
       - name: Smoke test the CLI entry point
         run: |
           out=$(AIONDA_API_KEY= node bin/aionda-mail-mcp.js 2>&1 < /dev/null || true)

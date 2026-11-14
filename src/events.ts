@@ -27,12 +27,12 @@
  * ```
  */
 import { webcrypto } from 'node:crypto';
-import { hybridDecapsulate } from './crypto/hybrid-kem';
-import { fromBase64 } from './crypto/encoding';
-import { decompress } from './crypto/decompression';
-import { McpDecryptionError } from './errors';
-import type { AiondaMailClient } from './client';
-import type { VaultPrivateKeys } from './crypto/email-decryptor';
+import { hybridDecapsulate } from './crypto/hybrid-kem.js';
+import { fromBase64 } from './crypto/encoding.js';
+import { decompress } from './crypto/decompression.js';
+import { McpDecryptionError } from './errors.js';
+import type { AiondaMailClient } from './client.js';
+import type { VaultPrivateKeys } from './crypto/email-decryptor.js';
 import type {
     EventType,
     EncryptedEventPayload,
@@ -40,7 +40,7 @@ import type {
     EventSubscription,
     MissedEventsOutput,
     EventHandler,
-} from './types/events';
+} from './types/events.js';
 
 /** Options for the event client */
 export interface AiondaEventClientOptions {

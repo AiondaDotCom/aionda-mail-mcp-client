@@ -3,14 +3,14 @@
  *
  * Orchestrates: Hex decode → AES-GCM decrypt (with PHP reorder) → Unpad → Decompress → UTF-8 decode
  */
-import { decryptAesGcm, decryptPhpAesGcm, decryptClientAesGcm } from './aes-gcm';
-import { isBucketPadded, unpadFromBucket } from './bucket-padding';
-import { decompress } from './decompression';
-import { fromHex } from './encoding';
-import { hybridDecapsulate } from './hybrid-kem';
-import { deriveEmailKey } from './key-derivation';
-import { decodeMimeEncodedWords, extractMessageId, extractReplyTo } from './mime-decoder';
-import type { EncryptedEmail, DecryptedEmail, DecryptedAttachmentMeta, EncryptedAttachment } from '../types/email';
+import { decryptAesGcm, decryptPhpAesGcm, decryptClientAesGcm } from './aes-gcm.js';
+import { isBucketPadded, unpadFromBucket } from './bucket-padding.js';
+import { decompress } from './decompression.js';
+import { fromHex } from './encoding.js';
+import { hybridDecapsulate } from './hybrid-kem.js';
+import { deriveEmailKey } from './key-derivation.js';
+import { decodeMimeEncodedWords, extractMessageId, extractReplyTo } from './mime-decoder.js';
+import type { EncryptedEmail, DecryptedEmail, DecryptedAttachmentMeta, EncryptedAttachment } from '../types/email.js';
 
 const MASTER_KEY_MARKER = '__MASTER_KEY_ENCRYPTED__';
 const MASTER_KEY_MARKER_HEX = '5f5f4d41535445525f4b45595f454e435259505445445f5f';

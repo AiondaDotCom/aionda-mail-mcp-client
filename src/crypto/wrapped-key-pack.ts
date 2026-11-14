@@ -29,8 +29,8 @@
 
 import { webcrypto } from 'node:crypto';
 
-import { toHex } from './encoding';
-import { hybridEncapsulate } from './hybrid-kem';
+import { toHex } from './encoding.js';
+import { hybridEncapsulate } from './hybrid-kem.js';
 
 /** AES-GCM-Prüfsumme, in diesem Format am Anfang statt am Ende. */
 const TAG_LENGTH = 16;

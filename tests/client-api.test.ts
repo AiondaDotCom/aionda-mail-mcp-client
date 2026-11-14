@@ -7,19 +7,24 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { AiondaMailClient } from '../src/client';
 import { McpDecryptionError, McpSessionExpiredError } from '../src/errors';
-import { toHex } from '../src/crypto/encoding';
-import { derivedEmail, incomingShare, makeVault, phpFieldHex, rnd, type Vault } from './helpers/vault';
+import { toBase64, toHex } from '../src/crypto/encoding';
+import { derivedEmail, incomingShare, makeVault, rnd, type Vault } from './helpers/vault';
 
 interface Sent { url: string; method: string; name?: string; args?: Record<string, unknown>; session?: string }
 
-/** Server-Attrappe: tools/call antwortet mit `{ data: handler(name, args) }`. */
+/**
+ * Server-Attrappe in der echten Serverform: tools/call antwortet mit
+ * `{ content: [{ type: 'text', text: JSON }] }`. (Bis 0.17.2 stand die
+ * Nutzlast hier in `result.data` – eine Form, die der Server nie liefert;
+ * die Methoden gaben deshalb gegen den echten Server `undefined` zurück.)
+ */
 function server(handler: (name: string, args: Record<string, unknown>) => unknown = () => ({})): Sent[] {
     const sent: Sent[] = [];
     vi.stubGlobal('fetch', vi.fn(async (url: string, init: { body: string; headers: Record<string, string> }) => {
         const req = JSON.parse(init.body);
         sent.push({ url, method: req.method, name: req.params?.name, args: req.params?.arguments, session: init.headers['Mcp-Session-Id'] });
         const result = req.method === 'tools/call'
-            ? { data: handler(req.params.name, req.params.arguments) }
+            ? { content: [{ type: 'text', text: JSON.stringify(handler(req.params.name, req.params.arguments)) }] }
             : req.method === 'tools/list' ? { tools: [{ name: 'list_emails' }] } : { protocolVersion: '2025-03-26' };
         return { status: 200, headers: new Headers({ 'Mcp-Session-Id': 'sid-1' }), json: async () => ({ jsonrpc: '2.0', id: req.id, result }) };
     }));
@@ -35,7 +40,7 @@ const keyOpts = (v: Vault) => ({
     vaultPrivateKeys: toHex(new Uint8Array([...v.privateKeys.x25519PrivateKey, ...v.privateKeys.mlKemPrivateKey])),
 });
 
-async function connected(handler?: Parameters<typeof server>[0], withKeys = false) {
+async function connected(handler?: Parameters<typeof server>[0], withKeys = false): Promise<{ client: AiondaMailClient; sent: Sent[] }> {
     const sent = server(handler);
     const client = new AiondaMailClient({ apiKey: 'tma_x', endpoint: 'https://mail.example/mcp', ...(withKeys ? keyOpts(vault) : {}) });
     await client.connect();
@@ -100,18 +105,24 @@ describe('Werkzeug-Wrapper', () => {
 });
 
 describe('Entschlüsselnde Methoden', () => {
-    it('listFoldersDecrypted: Namen mit dem Master Key, kaputte und fehlende fallen auf folder_type zurück', async () => {
-        const name = await phpFieldHex('Projekte', vault.masterKey);
-        const { client } = await connected(() => ({ folders: [
-            { uuid: 'f1', folder_type: 'custom', encrypted_name: name, email_count: 3, unread_count: 1 },
-            { uuid: 'f2', folder_type: 'custom', encrypted_name: toHex(rnd(40)), email_count: 0, unread_count: 0 },
-            { uuid: 'f3', folder_type: 'inbox', email_count: 9, unread_count: 2 },
-        ] }), true);
+    it('listFoldersDecrypted: Serverform system_folders/custom_folders, Namen mit dem Master Key, kaputte fallen auf custom zurück', async () => {
+        // Form wie McpToolsService::toolListFolders (trashmail): encrypted_name Base64.
+        const { encryptPhpAesGcm } = await import('../src/crypto/aes-gcm');
+        const name = toBase64(await encryptPhpAesGcm(new TextEncoder().encode('Projekte'), vault.masterKey));
+        const { client } = await connected(() => ({
+            system_folders: [{ name: 'inbox', type: 'system', email_count: 9, unread_count: 2 }],
+            custom_folders: [
+                { uuid: 'f1', encrypted_name: name, parent_uuid: null, color: null, sort_order: 0, email_count: 3, unread_count: 1 },
+                { uuid: 'f2', encrypted_name: toBase64(rnd(40)), parent_uuid: null, color: null, sort_order: 1, email_count: 0, unread_count: 0 },
+            ],
+            shared_folders: { incoming: [], outgoing: [] },
+            note: 'n',
+        }), true);
 
         expect(await client.listFoldersDecrypted()).toEqual([
+            { uuid: 'inbox', folderType: 'inbox', name: 'inbox', emailCount: 9, unreadCount: 2 },
             { uuid: 'f1', folderType: 'custom', name: 'Projekte', emailCount: 3, unreadCount: 1 },
             { uuid: 'f2', folderType: 'custom', name: 'custom', emailCount: 0, unreadCount: 0 },
-            { uuid: 'f3', folderType: 'inbox', name: 'inbox', emailCount: 9, unreadCount: 2 },
         ]);
     });
 

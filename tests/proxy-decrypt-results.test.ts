@@ -156,22 +156,25 @@ describe('list_folders', () => {
         const broken = toBase64(rnd(40));
         const share = { folder_uuid: 'shared-1', share_uuid: 's-1' };
         const calls = fakeServer((name) => name === 'list_folders'
-            ? { folders: [
-                { uuid: 'f1', encrypted_name: plain },
-                { uuid: 'f2', encrypted_name: packed },
-                { uuid: 'f3', encrypted_name: broken },
-                { uuid: 'f4', folder_type: 'inbox' },
-            ], shared_folders: { incoming: [share] } }
+            ? {
+                system_folders: [{ name: 'inbox', type: 'system', email_count: 0, unread_count: 0 }],
+                custom_folders: [
+                    { uuid: 'f1', encrypted_name: plain },
+                    { uuid: 'f2', encrypted_name: packed },
+                    { uuid: 'f3', encrypted_name: broken },
+                ],
+                shared_folders: { incoming: [share], outgoing: [] },
+            }
             : { emails: [] });
 
         const proxy = newProxy();
         const data = payloadOf(await proxy.handleRequest(toolCall('list_folders')));
-        const folders = data.folders as Record<string, unknown>[];
+        const folders = data.custom_folders as Record<string, unknown>[];
 
         expect(folders[0]).toEqual({ uuid: 'f1', name: 'Projekte' });
         expect(folders[1]).toEqual({ uuid: 'f2', name: 'Steuer 2026' });
         expect(folders[2]).toEqual({ uuid: 'f3', encrypted_name: broken });
-        expect(folders[3]).toEqual({ uuid: 'f4', folder_type: 'inbox' });
+        expect(data.system_folders).toEqual([{ name: 'inbox', type: 'system', email_count: 0, unread_count: 0 }]);
         expect((proxy as unknown as { cachedIncomingShares: unknown[] }).cachedIncomingShares).toEqual([share]);
         expect(calls).toHaveLength(1);
     });

@@ -4,8 +4,8 @@
  * Low-level transport for MCP server communication.
  * Sends JSON-RPC 2.0 requests over HTTP POST.
  */
-import { McpError, McpAuthError, McpRateLimitError } from './errors';
-import type { JsonRpcRequest, JsonRpcNotification, JsonRpcResponse } from './types/mcp-protocol';
+import { McpError, McpAuthError, McpRateLimitError, McpTransportError, mcpErrorFromJsonRpc } from './errors.js';
+import type { JsonRpcRequest, JsonRpcNotification, JsonRpcResponse } from './types/mcp-protocol.js';
 
 export interface TransportOptions {
     /** MCP server endpoint URL (e.g. https://trashmail.com/mcp) */
@@ -96,7 +96,8 @@ export class McpTransport {
             const json = await response.json() as JsonRpcResponse;
 
             if (json.error) {
-                throw new McpError(json.error.message, json.error.code, json.error.data);
+                // Ablehnung am Schlüsseltor (194/195/203) trägt den Server-Code in data.error_code.
+                throw mcpErrorFromJsonRpc(json.error, method === 'tools/call' ? String(params?.name ?? '') : undefined);
             }
 
             return json;
@@ -106,10 +107,10 @@ export class McpTransport {
             if (error instanceof McpError) throw error;
 
             if (error instanceof DOMException && error.name === 'AbortError') {
-                throw new McpError('Request timeout', -32000);
+                throw new McpTransportError('Request timeout', -32000);
             }
 
-            throw new McpError(
+            throw new McpTransportError(
                 `Transport error: ${error instanceof Error ? error.message : String(error)}`,
                 -32603
             );
