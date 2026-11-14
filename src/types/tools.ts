@@ -11,15 +11,35 @@ export interface ListFoldersInput {
     // no params
 }
 
+/**
+ * Antwort von list_folders, wie McpToolsService::toolListFolders sie baut
+ * (seit trashmail 01ab6cf5d, 22.03.2026; vorher gab es ein Feld `folders`).
+ * Mit Ordnergrenze des Schlüssels nur die freigegebenen Ordner.
+ */
 export interface ListFoldersOutput {
-    folders: EncryptedFolderInfo[];
+    system_folders: SystemFolderInfo[];
+    custom_folders: EncryptedFolderInfo[];
+    shared_folders: { incoming: Record<string, unknown>[]; outgoing: Record<string, unknown>[] };
     note: string;
 }
 
+/** Systemordner: ohne UUID, angesprochen über den Namen (`inbox`, `sent`, …). */
+export interface SystemFolderInfo {
+    name: string;
+    type: 'system';
+    email_count: number;
+    unread_count: number;
+}
+
+/** Eigener Ordner: Name verschlüsselt (Base64). Der Proxy ersetzt ihn durch `name`. */
 export interface EncryptedFolderInfo {
     uuid: string;
-    folder_type: string;
-    encrypted_name: string;
+    encrypted_name?: string;
+    /** Nur im tmv_-Betrieb: vom Proxy entschlüsselter Name. */
+    name?: string;
+    parent_uuid?: string | null;
+    color?: string | null;
+    sort_order?: number;
     email_count: number;
     unread_count: number;
 }

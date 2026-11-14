@@ -721,10 +721,12 @@ export class McpDecryptingProxy {
             modified = true;
         }
 
-        // Decrypt folder names (list_folders)
-        if (data.folders && Array.isArray(data.folders)) {
-            data.folders = await Promise.all(
-                (data.folders as Record<string, unknown>[]).map(f => this.tryDecryptFolder(f))
+        // Decrypt folder names (list_folders). Der Server liefert die eigenen
+        // Ordner in `custom_folders` (seit trashmail 01ab6cf5d); ein Feld
+        // `folders` gibt es nicht mehr.
+        if (toolName === 'list_folders' && Array.isArray(data.custom_folders)) {
+            data.custom_folders = await Promise.all(
+                (data.custom_folders as Record<string, unknown>[]).map(f => this.tryDecryptFolder(f))
             );
             modified = true;
         }

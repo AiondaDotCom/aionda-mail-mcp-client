@@ -13,7 +13,7 @@ export type {
 } from './mcp-protocol.js';
 
 export type {
-    ListFoldersInput, ListFoldersOutput, EncryptedFolderInfo,
+    ListFoldersInput, ListFoldersOutput, EncryptedFolderInfo, SystemFolderInfo,
     ListEmailsInput, ListEmailsOutput, EncryptedEmailSummary,
     ReadEmailInput, ReadEmailOutput, EncryptedAttachmentInfo,
     MarkReadInput, MarkReadOutput,

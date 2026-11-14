@@ -7,8 +7,8 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { AiondaMailClient } from '../src/client';
 import { McpDecryptionError, McpSessionExpiredError } from '../src/errors';
-import { toHex } from '../src/crypto/encoding';
-import { derivedEmail, incomingShare, makeVault, phpFieldHex, rnd, type Vault } from './helpers/vault';
+import { toBase64, toHex } from '../src/crypto/encoding';
+import { derivedEmail, incomingShare, makeVault, rnd, type Vault } from './helpers/vault';
 
 interface Sent { url: string; method: string; name?: string; args?: Record<string, unknown>; session?: string }
 
@@ -105,18 +105,24 @@ describe('Werkzeug-Wrapper', () => {
 });
 
 describe('Entschlüsselnde Methoden', () => {
-    it('listFoldersDecrypted: Namen mit dem Master Key, kaputte und fehlende fallen auf folder_type zurück', async () => {
-        const name = await phpFieldHex('Projekte', vault.masterKey);
-        const { client } = await connected(() => ({ folders: [
-            { uuid: 'f1', folder_type: 'custom', encrypted_name: name, email_count: 3, unread_count: 1 },
-            { uuid: 'f2', folder_type: 'custom', encrypted_name: toHex(rnd(40)), email_count: 0, unread_count: 0 },
-            { uuid: 'f3', folder_type: 'inbox', email_count: 9, unread_count: 2 },
-        ] }), true);
+    it('listFoldersDecrypted: Serverform system_folders/custom_folders, Namen mit dem Master Key, kaputte fallen auf custom zurück', async () => {
+        // Form wie McpToolsService::toolListFolders (trashmail): encrypted_name Base64.
+        const { encryptPhpAesGcm } = await import('../src/crypto/aes-gcm');
+        const name = toBase64(await encryptPhpAesGcm(new TextEncoder().encode('Projekte'), vault.masterKey));
+        const { client } = await connected(() => ({
+            system_folders: [{ name: 'inbox', type: 'system', email_count: 9, unread_count: 2 }],
+            custom_folders: [
+                { uuid: 'f1', encrypted_name: name, parent_uuid: null, color: null, sort_order: 0, email_count: 3, unread_count: 1 },
+                { uuid: 'f2', encrypted_name: toBase64(rnd(40)), parent_uuid: null, color: null, sort_order: 1, email_count: 0, unread_count: 0 },
+            ],
+            shared_folders: { incoming: [], outgoing: [] },
+            note: 'n',
+        }), true);
 
         expect(await client.listFoldersDecrypted()).toEqual([
+            { uuid: 'inbox', folderType: 'inbox', name: 'inbox', emailCount: 9, unreadCount: 2 },
             { uuid: 'f1', folderType: 'custom', name: 'Projekte', emailCount: 3, unreadCount: 1 },
             { uuid: 'f2', folderType: 'custom', name: 'custom', emailCount: 0, unreadCount: 0 },
-            { uuid: 'f3', folderType: 'inbox', name: 'inbox', emailCount: 9, unreadCount: 2 },
         ]);
     });
 

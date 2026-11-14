@@ -336,13 +336,20 @@ describe('Lesen, Anhänge, Verschieben', () => {
     it('listFoldersDecrypted im tmv_-Betrieb nimmt die vom Proxy entschlüsselten Namen', async () => {
         const { encryptPhpAesGcm } = await import('../src/crypto/aes-gcm');
         const name = toBase64(await encryptPhpAesGcm(utf8('Feldwerk'), vault.masterKey));
-        const { client } = await connectedClient((n) => (n === 'list_folders' ? { folders: [
-            { uuid: 'f1', folder_type: 'custom', encrypted_name: name, email_count: 2, unread_count: 1 },
-            { uuid: 'f2', folder_type: 'inbox', email_count: 5, unread_count: 0 },
-        ] } : {}));
+        // Form wie McpToolsService::toolListFolders (trashmail) bei Ordnergrenze inbox+sent.
+        const { client } = await connectedClient((n) => (n === 'list_folders' ? {
+            system_folders: [
+                { name: 'inbox', type: 'system', email_count: 5, unread_count: 0 },
+                { name: 'sent', type: 'system', email_count: 1, unread_count: 0 },
+            ],
+            custom_folders: [{ uuid: 'f1', encrypted_name: name, parent_uuid: null, color: null, sort_order: 0, email_count: 2, unread_count: 1 }],
+            shared_folders: { incoming: [], outgoing: [] },
+            note: 'n',
+        } : {}));
         expect(await client.listFoldersDecrypted()).toEqual([
+            { uuid: 'inbox', folderType: 'inbox', name: 'inbox', emailCount: 5, unreadCount: 0 },
+            { uuid: 'sent', folderType: 'sent', name: 'sent', emailCount: 1, unreadCount: 0 },
             { uuid: 'f1', folderType: 'custom', name: 'Feldwerk', emailCount: 2, unreadCount: 1 },
-            { uuid: 'f2', folderType: 'inbox', name: 'inbox', emailCount: 5, unreadCount: 0 },
         ]);
     });
 });

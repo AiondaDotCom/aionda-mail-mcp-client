@@ -311,7 +311,9 @@ again later from the saved cursor. An unknown cursor (the email was deleted)
 throws `McpCursorInvalidError`: restart from `'start'` and deduplicate by
 uuid. If the server ignores `after` (too old), `listEmailPage` throws instead
 of silently returning an offset page. Mail moved *into* a folder keeps its
-arrival time and does not reappear behind the cursor.
+arrival time: once the cursor is past it, the cursor does **not** deliver it
+again. If your integration needs to see moves, compare a full listing
+(`listEmails({ folder })`, offset paging) from time to time.
 
 > **Keys with a folder or time limit cannot use `event_subscribe` or
 > `get_missed_events`** – the server rejects them with error 200
@@ -325,7 +327,7 @@ arrival time and does not reappear behind the cursor.
 | Inbox / Sent / a custom folder | `listEmailPage({ folder: 'inbox' \| 'sent' \| 'folder:<uuid>', after })`, `iterateEmailPages(…)` |
 | Full message incl. attachment list | `readEmailDecrypted(uuid)` |
 | Attachment bytes | `getAttachmentDecrypted(attachmentUuid)` → `{ filename, mimetype, content: Uint8Array, emailUuid }` (no temp file) |
-| Folder names → uuid | `listFoldersDecrypted()` |
+| Folder names → uuid | `listFoldersDecrypted()` (system folders carry their name as `uuid`; with a folder limit only the allowed folders) |
 | Move | `moveEmail(uuid, 'trash' \| '<folder-uuid>')` |
 | Reply / forward a stored mail | `replyToEmail(uuid, { body, lang })`, `forwardEmailTo(uuid, { to, lang })` |
 | Send | `sendEmail({ from_identity, to, subject, body, lang })` |

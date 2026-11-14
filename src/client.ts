@@ -31,7 +31,7 @@ import { MCP_ENDPOINT_PATH } from './constants.js';
 import { decryptEmail } from './crypto/email-decryptor.js';
 import { decryptAttachmentRecord } from './crypto/attachment-decryptor.js';
 import type { DecryptedAttachmentWithEmail } from './crypto/attachment-decryptor.js';
-import { fromHex, toBase64 } from './crypto/encoding.js';
+import { fromBase64, fromHex, toBase64 } from './crypto/encoding.js';
 import type { VaultPrivateKeys } from './crypto/email-decryptor.js';
 import { decryptSharedFolderKey } from './crypto/shared-folder-key.js';
 import { McpDecryptingProxy } from './proxy.js';
@@ -74,7 +74,7 @@ import type {
     ListEmployeeMcpKeysOutput,
 } from './types/index.js';
 import type { DecryptedEmail, EncryptedEmail } from './types/email.js';
-import type { EncryptedFolder, DecryptedFolder } from './types/folder.js';
+import type { DecryptedFolder } from './types/folder.js';
 
 export interface AiondaMailClientOptions {
     /** MCP API key: personal key (tmmcp_*) or AI employee key (tma_*) */
@@ -263,47 +263,51 @@ export class AiondaMailClient {
         return this.serverTool<ListFoldersOutput>('list_folders');
     }
 
-    /** Folders with decrypted names (to find the uuid of a custom folder for moveEmail). */
+    /**
+     * Folders with decrypted names (to find the uuid of a custom folder for
+     * moveEmail / `folder:<uuid>`). System folders have no uuid on the
+     * server; their `uuid` is the name the tools accept (`inbox`, `sent`, …).
+     * With a folder limit only the allowed folders are listed.
+     */
     async listFoldersDecrypted(): Promise<DecryptedFolder[]> {
         if (this.proxy) {
             this.ensureDecryptionReady();
-            const out = await this.tool<{ folders?: Record<string, unknown>[] }>('list_folders');
-            return (out.folders ?? []).map((f) => ({
-                uuid: f.uuid as string,
-                folderType: f.folder_type as string,
-                // Der Proxy setzt `name` nur, wenn er den Namen entschlüsseln konnte.
-                name: typeof f.name === 'string' ? f.name : (f.folder_type as string),
-                emailCount: f.email_count as number,
-                unreadCount: f.unread_count as number,
-            }));
+        } else {
+            this.ensureVaultKey();
         }
-        this.ensureVaultKey();
-        const output = await this.listFolders();
-        return Promise.all(
-            output.folders.map(async (f: EncryptedFolder) => {
-                let name = f.folder_type;
-                if (f.encrypted_name && this.masterKey) {
-                    try {
-                        const { decryptPhpAesGcm } = await import('./crypto/aes-gcm.js');
-                        const { decompress } = await import('./crypto/decompression.js');
-                        const { unpadFromBucket, isBucketPadded } = await import('./crypto/bucket-padding.js');
-                        let plaintext = await decryptPhpAesGcm(fromHex(f.encrypted_name), this.masterKey);
-                        if (isBucketPadded(plaintext)) plaintext = unpadFromBucket(plaintext);
-                        plaintext = await decompress(plaintext);
-                        name = new TextDecoder().decode(plaintext);
-                    } catch {
-                        name = f.folder_type;
-                    }
-                }
-                return {
-                    uuid: f.uuid,
-                    folderType: f.folder_type,
-                    name,
-                    emailCount: f.email_count,
-                    unreadCount: f.unread_count,
-                };
-            })
-        );
+        // Im tmv_-Betrieb entschlüsselt der Proxy die Namen (`name`), sonst hier.
+        const out = this.proxy ? await this.tool<ListFoldersOutput>('list_folders') : await this.listFolders();
+        const system = (out.system_folders ?? []).map((f) => ({
+            uuid: f.name,
+            folderType: f.name,
+            name: f.name,
+            emailCount: f.email_count,
+            unreadCount: f.unread_count,
+        }));
+        const custom = await Promise.all((out.custom_folders ?? []).map(async (f) => ({
+            uuid: f.uuid,
+            folderType: 'custom',
+            name: typeof f.name === 'string' ? f.name : await this.decryptFolderName(f.encrypted_name),
+            emailCount: f.email_count,
+            unreadCount: f.unread_count,
+        })));
+        return [...system, ...custom];
+    }
+
+    /** Ordnername (Base64, PHP-AES-GCM, ggf. gepolstert/komprimiert); unlesbar → 'custom'. */
+    private async decryptFolderName(encryptedName: string | undefined): Promise<string> {
+        if (!encryptedName || !this.masterKey) return 'custom';
+        try {
+            const { decryptPhpAesGcm } = await import('./crypto/aes-gcm.js');
+            const { decompress } = await import('./crypto/decompression.js');
+            const { unpadFromBucket, isBucketPadded } = await import('./crypto/bucket-padding.js');
+            let plaintext = await decryptPhpAesGcm(fromBase64(encryptedName), this.masterKey);
+            if (isBucketPadded(plaintext)) plaintext = unpadFromBucket(plaintext);
+            plaintext = await decompress(plaintext);
+            return new TextDecoder().decode(plaintext);
+        } catch {
+            return 'custom';
+        }
     }
 
     // ── Emails ──
