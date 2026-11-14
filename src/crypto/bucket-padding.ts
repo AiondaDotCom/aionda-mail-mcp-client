@@ -42,4 +42,4 @@ export function unpadFromBucket(paddedData: Uint8Array): Uint8Array {
 /**
  * Full decompression pipeline: unpad → decompress
  */
-export { decompress } from './decompression';
+export { decompress } from './decompression.js';

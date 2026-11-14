@@ -14,7 +14,6 @@ vi.mock('../src/transport', () => ({
 vi.mock('../src/session', () => {
     const toolResults: Record<string, unknown> = {
         list_shared_folders: {
-            content: [{ type: 'text', text: '{}' }],
             data: {
                 incoming: [{
                     share_uuid: 'share-1',
@@ -40,19 +39,15 @@ vi.mock('../src/session', () => {
             },
         },
         share_folder: {
-            content: [{ type: 'text', text: '{}' }],
             data: { uuid: 'share-new', created_at: '2026-02-28' },
         },
         revoke_share: {
-            content: [{ type: 'text', text: '{}' }],
             data: { revoked: true },
         },
         update_share_permissions: {
-            content: [{ type: 'text', text: '{}' }],
             data: { updated: true },
         },
         get_recipient_keys: {
-            content: [{ type: 'text', text: '{}' }],
             data: {
                 x25519_public_key: 'pub_x',
                 mlkem_public_key: 'pub_ml',
@@ -67,8 +62,11 @@ vi.mock('../src/session', () => {
                 capabilities: { tools: {} },
                 serverInfo: { name: 'Test', version: '1.0.0' },
             });
+            // Wie der echte Server: die Nutzlast steht als JSON im Textinhalt.
+            // (Vorher lag sie in `data`, das der Server nie liefert.)
             callTool = vi.fn().mockImplementation((name: string) => {
-                return Promise.resolve(toolResults[name] || { data: {} });
+                const payload = (toolResults[name] as { data?: unknown } | undefined)?.data ?? {};
+                return Promise.resolve({ content: [{ type: 'text', text: JSON.stringify(payload) }] });
             });
             isInitialized = vi.fn().mockReturnValue(true);
             isExpired = vi.fn().mockReturnValue(false);

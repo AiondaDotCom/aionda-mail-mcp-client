@@ -3,10 +3,10 @@
  *
  * Handles: initialize → notifications/initialized → ping → destroy
  */
-import { McpTransport } from './transport';
-import { McpSessionExpiredError } from './errors';
-import { MCP_PROTOCOL_VERSION, SESSION_TTL_MS } from './constants';
-import type { McpInitializeResult, McpToolDefinition } from './types/mcp-protocol';
+import { McpTransport } from './transport.js';
+import { McpSessionExpiredError } from './errors.js';
+import { MCP_PROTOCOL_VERSION, SESSION_TTL_MS } from './constants.js';
+import type { McpInitializeResult, McpToolDefinition } from './types/mcp-protocol.js';
 
 export class McpSession {
     private transport: McpTransport;

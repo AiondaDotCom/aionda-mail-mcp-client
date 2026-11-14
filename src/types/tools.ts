@@ -3,7 +3,7 @@
  * Derived from McpToolsService.php (26 tools)
  */
 
-import type { EventType } from './events';
+import type { EventType } from './events.js';
 
 // ── Mailbox Read ──
 
@@ -28,13 +28,26 @@ export interface ListEmailsInput {
     folder?: string;
     limit?: number;
     offset?: number;
+    /**
+     * Stabiler Zeiger: "start" für die älteste Mail, danach `next_cursor` der
+     * vorigen Seite. Reihenfolge = Eingangsreihenfolge (älteste zuerst);
+     * `offset` wird dann ignoriert. Mails jünger als 2 s hält der Server zurück.
+     */
+    after?: string;
 }
 
 export interface ListEmailsOutput {
     emails: EncryptedEmailSummary[];
-    total: number;
-    offset: number;
+    /** Nur im Offset-Modus. */
+    total?: number;
+    offset?: number;
     limit: number;
+    /** Nur im Zeiger-Modus (`after`). */
+    has_more?: boolean;
+    /** Nur im Zeiger-Modus: UUID der letzten gelieferten Mail (bei leerer Seite: der übergebene Zeiger). */
+    next_cursor?: string;
+    /** Nur im Zeiger-Modus: "arrival_asc". */
+    order?: string;
 }
 
 export interface EncryptedEmailSummary {
@@ -164,19 +177,43 @@ export type GetDeaOutput = DeaInfo;
 
 // ── Send/Reply/Forward ──
 
+/**
+ * Anhang für send/reply/forward. Entweder ein Pfad (liest der Proxy von der
+ * Platte) oder der Inhalt im Speicher – Base64-Text oder Bytes.
+ */
+export type OutgoingAttachment =
+    | { file_path: string; filename?: string; mimetype?: string }
+    | { filename: string; content: string | Uint8Array; mimetype?: string; size?: number };
+
+/** Wiederholungssicherer Versand (#3dac1ce0). */
+export interface IdempotencyOption {
+    /**
+     * 1–128 druckbare ASCII-Zeichen. Derselbe Schlüssel binnen 24 h sendet nie
+     * eine zweite Mail, sondern liefert das Ergebnis der ersten
+     * (`idempotent_replay: true`). Wird als `idempotency_key` gesendet.
+     */
+    idempotencyKey?: string;
+}
+
 export interface SendEmailInput {
     from_identity: string;
     to: string;
     subject: string;
     body: string;
+    /** Sprache des Textes (ISO 639-1); der Server verlangt sie. */
+    lang?: string;
     cc?: string;
     bcc?: string;
     priority?: 'low' | 'normal' | 'high';
+    attachments?: OutgoingAttachment[];
+    idempotency_key?: string;
 }
 
 export interface SendEmailOutput {
     message_id: string;
     sent: boolean;
+    /** true: derselbe idempotency_key wurde schon benutzt, es ging keine zweite Mail hinaus. */
+    idempotent_replay?: boolean;
 }
 
 export interface ReplyEmailInput {
@@ -189,11 +226,16 @@ export interface ReplyEmailInput {
     cc?: string;
     subject?: string;
     from_identity?: string;
+    lang?: string;
+    attachments?: OutgoingAttachment[];
+    idempotency_key?: string;
 }
 
 export interface ReplyEmailOutput {
     message_id: string;
-    replied_to: string;
+    replied_to?: string;
+    idempotent_replay?: boolean;
+    [key: string]: unknown;
 }
 
 export interface ForwardEmailInput {
@@ -203,11 +245,16 @@ export interface ForwardEmailInput {
     original_body: string;
     body?: string;
     from_identity?: string;
+    lang?: string;
+    attachments?: OutgoingAttachment[];
+    idempotency_key?: string;
 }
 
 export interface ForwardEmailOutput {
     message_id: string;
-    forwarded_to: string;
+    forwarded_to?: string;
+    idempotent_replay?: boolean;
+    [key: string]: unknown;
 }
 
 // ── Drafts ──
@@ -433,4 +480,77 @@ export interface GetMissedEventsOutput {
     events: EncryptedEventEntry[];
     has_more: boolean;
     note: string;
+}
+
+// ── MCP-Schlüsselverwaltung (#613404e4, #a14536ed, #f5292ca4) ──
+
+/**
+ * Feste Grenzen eines MCP-Schlüssels. `null` (oder fehlend) = keine Grenze;
+ * eine LEERE Liste = nichts erlaubt.
+ */
+export interface McpKeyLimits {
+    /** inbox, sent, drafts, spam, trash oder folder:<uuid> */
+    allowed_folders?: string[] | null;
+    /** Nur Mails der letzten N Tage (1–3650) */
+    max_age_days?: number | null;
+    /** Absenderadressen, von denen dieser Schlüssel senden darf */
+    allowed_senders?: string[] | null;
+    /** MCP-Werkzeuge, die dieser Schlüssel aufrufen darf */
+    allowed_tools?: string[] | null;
+    /** Versandgrenze je Stunde (0 = kein Versand, höchstens die Kontogrenze) */
+    max_sends_per_hour?: number | null;
+    /** Versandgrenze je Tag; kann die Kontogrenze nur senken (sonst Fehler 204) */
+    max_sends_per_day?: number | null;
+    /** IP-Adressen oder CIDR-Netze */
+    allowed_source_ips?: string[] | null;
+}
+
+export interface McpKeyInfo {
+    key_uuid: string;
+    /** "personal" oder "ai_employee" */
+    kind: string;
+    name: string;
+    limits: Required<McpKeyLimits>;
+    suspended: boolean;
+    suspended_at: string | null;
+    rotation_successor: string | null;
+    rotation_deadline: string | null;
+    company_managed: boolean;
+    suspended_by_company: boolean;
+    account_daily_limit: number;
+    last_used_at: string | null;
+    last_source_ip: string | null;
+    /** Nur bei suspend_mcp_key / suspend_employee_mcp_key */
+    subscriptions_closed?: number;
+}
+
+export interface ListMcpKeysOutput {
+    keys: McpKeyInfo[];
+}
+
+export interface McpKeyAccessLogEntry {
+    at: string;
+    method: string;
+    tool: string | null;
+    source_ip: string;
+    success: boolean;
+    error_code: number | null;
+    duration_ms: number | null;
+    old_mail: boolean;
+}
+
+export interface McpKeyAlert {
+    type: string;
+    detail: string;
+    at: string;
+}
+
+export interface McpKeyAccessLogOutput {
+    entries: McpKeyAccessLogEntry[];
+    alerts: McpKeyAlert[];
+}
+
+export interface ListEmployeeMcpKeysOutput {
+    employee_uuid: string;
+    keys: McpKeyInfo[];
 }

@@ -12,8 +12,8 @@
  * Hauptschlüssel nicht (Zero Knowledge). Darum verschlüsselt hier der Proxy
  * und schickt dem Server nur `encrypted_content`.
  */
-import { decryptAesGcm, encryptClientAesGcm } from './crypto/aes-gcm';
-import { fromHex, toHex } from './crypto/encoding';
+import { decryptAesGcm, encryptClientAesGcm } from './crypto/aes-gcm.js';
+import { fromHex, toHex } from './crypto/encoding.js';
 
 export interface DraftAddress {
     email: string;

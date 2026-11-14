@@ -246,20 +246,129 @@ Then ask your agent something like *"What came in today that needs an answer?"*
 import { AiondaMailClient } from '@aiondadotcom/mail-mcp-client';
 
 const client = new AiondaMailClient({
-    apiKey: 'tmmcp_...',
-    vaultKey: '...',          // hex-encoded 32-byte master key (optional)
-    vaultPrivateKeys: '...',  // hex-encoded X25519 (32) + ML-KEM (3168) private keys (optional)
+    apiKey: process.env.AIONDA_MCP_KEY!,     // tmmcp_… (personal) or tma_… (AI employee)
+    vaultKey: process.env.AIONDA_VAULT_KEY!, // tmv_…
     endpoint: 'https://mail.aionda.com',
 });
 
-await client.connect();
-const emails = await client.listEmails('inbox', 20, 0);
-const email = await client.readEmailDecrypted(emails[0].uuid);
+await client.connect();                      // fetches and unlocks the vault keys locally
+const page = await client.listEmailPage({ folder: 'inbox', after: 'start' });
+const email = await client.readEmailDecrypted(page.emails[0].uuid);
 console.log(email.subject, email.from);
 await client.disconnect();
 ```
 
-Without keys the client is a plain MCP transport and returns ciphertext as-is.
+With a `tmv_…` vault key the library runs on the same engine as the stdio
+proxy: same key bootstrap, same session recovery, same local encryption and
+shared-folder handling. (Before 0.18.0 the typed methods returned `undefined`
+against the real server, and the package could not be imported from plain
+Node ESM. Both are fixed.) The legacy form – `vaultKey` as hex master key
+plus `vaultPrivateKeys` – still works, without shared folders.
+
+### Using as a library in a server integration
+
+For a backend that reads and sends mail deterministically (a queue worker,
+a CRM sync, a ticket system) use a **dedicated MCP key with limits** and the
+cursor API.
+
+**1. Create the key with limits.** In the web app (*Settings → MCP access →
+Limits*) or with `setMcpKeyLimits` from an unrestricted personal key, give
+the integration only what it needs: folders (`allowed_folders`), a time
+window (`max_age_days`), sender addresses (`allowed_senders`), tools
+(`allowed_tools`), sends per hour/day (`max_sends_per_hour`,
+`max_sends_per_day` – a key can only lower the account limit of 30 per day)
+and source addresses (`allowed_source_ips`). If the integration is
+compromised, the damage is bounded by what the key may do, every call is in
+the key's access log, and the owner – or the company owner for an
+employee's key – can suspend it in seconds.
+
+If you set `allowed_tools`, include `get_vault_keys` – `connect()` needs it to
+unlock the vault and otherwise fails with `McpToolNotAllowedError` (200).
+Typical set for a mail integration: `get_vault_keys`, `list_folders`,
+`list_emails`, `read_email`, `get_attachment`, `move_email`, `send_email`,
+`reply_email`, `forward_email`.
+
+**2. Keep both keys out of the database.** Load `tmmcp_…` and `tmv_…` from
+the environment or a secret store at process start. The vault key decrypts
+the mailbox locally; whoever has both keys can read everything the limits
+allow. Do not log them and do not store them next to the data they protect.
+
+**3. Read with the cursor, not with events.**
+
+```typescript
+let cursor = await loadCursor() ?? 'start';    // your own persistence
+for await (const page of client.iterateEmailPages({ folder: 'inbox', after: cursor, limit: 50 })) {
+    for (const mail of page.emails) await handle(mail);           // decrypted
+    for (const bad of page.failed) await reportUndecryptable(bad); // { uuid, receivedAt, error }
+    await saveCursor(page.nextCursor);                            // after processing the page
+}
+```
+
+The cursor walks in arrival order; each email is delivered exactly once even
+if new mail arrives between pages, and mail younger than 2 s is held back
+until settled. When `hasMore` is false you are at the end for now – poll
+again later from the saved cursor. An unknown cursor (the email was deleted)
+throws `McpCursorInvalidError`: restart from `'start'` and deduplicate by
+uuid. If the server ignores `after` (too old), `listEmailPage` throws instead
+of silently returning an offset page. Mail moved *into* a folder keeps its
+arrival time and does not reappear behind the cursor.
+
+> **Keys with a folder or time limit cannot use `event_subscribe` or
+> `get_missed_events`** – the server rejects them with error 200
+> (`McpToolNotAllowedError`) because events cannot be filtered by those
+> limits. Integrations poll with the cursor.
+
+**4. Fetch what you need, decrypted in memory.**
+
+| Need | Method |
+|---|---|
+| Inbox / Sent / a custom folder | `listEmailPage({ folder: 'inbox' \| 'sent' \| 'folder:<uuid>', after })`, `iterateEmailPages(…)` |
+| Full message incl. attachment list | `readEmailDecrypted(uuid)` |
+| Attachment bytes | `getAttachmentDecrypted(attachmentUuid)` → `{ filename, mimetype, content: Uint8Array, emailUuid }` (no temp file) |
+| Folder names → uuid | `listFoldersDecrypted()` |
+| Move | `moveEmail(uuid, 'trash' \| '<folder-uuid>')` |
+| Reply / forward a stored mail | `replyToEmail(uuid, { body, lang })`, `forwardEmailTo(uuid, { to, lang })` |
+| Send | `sendEmail({ from_identity, to, subject, body, lang })` |
+
+**5. Make sends retry-safe.** Pass `idempotencyKey` (1–128 printable ASCII,
+e.g. your job id) to `sendEmail`, `replyEmail`, `forwardEmail`,
+`replyToEmail` or `forwardEmailTo`. The same key within 24 h never sends a
+second mail; the repeat returns the first result with
+`idempotent_replay: true`. Attachments can be given in memory
+(`{ filename, content: Uint8Array | base64, mimetype }`) or as `file_path`.
+
+**6. Tell permanent from temporary errors.** Every server error 194–206 has
+its own class; `isRetryableMcpError(err)` tells whether repeating the same
+call later can succeed.
+
+| Code | Class | Meaning | Retry? |
+|---|---|---|---|
+| 194 | `McpKeySuspendedError` | Key suspended (owner or company) | no – alert a human |
+| 203 | `McpKeyRotatedError` | Key replaced by a successor and expired | no – deploy the new key |
+| 195 | `McpSourceAddressDeniedError` | Source address not in `allowed_source_ips` | no |
+| 196 | `McpFolderNotAllowedError` | Folder outside `allowed_folders` | no |
+| 197 | `McpOutsideTimeWindowError` | Mail older than `max_age_days` | no |
+| 198 | `McpSenderNotAllowedError` | Sender not in `allowed_senders` | no |
+| 199 | `McpSendLimitReachedError` | Send limit per hour/day reached, nothing sent | yes, after the window |
+| 200 | `McpToolNotAllowedError` | Tool not allowed for this key | no |
+| 201 | `McpIdempotencyConflictError` | `inProgress` true: first request still running → retry; false: key used for a different request → don't | depends |
+| 202 | `McpCursorInvalidError` | Unknown cursor | restart from `'start'` |
+| 204 | `McpLimitAboveAccountError` | Limit above the account limit | no |
+| 205 | `McpKeyCompanyManagedError` | Limits/suspension set by the company | no |
+| 206 | `McpLimitLoosenedError` | Company change would loosen a limit | no |
+
+`McpKeySuspendedError` and `McpKeyRotatedError` share the base class
+`McpKeyUnusableError`; the limit errors 195–200 share `McpKeyLimitError`;
+204–206 share `McpKeyAdminError`. A suspended or rotated key already fails
+in `connect()`. Timeouts and network errors are `McpTransportError`
+(retryable – for sends only with an `idempotencyKey`).
+
+**Key management from code** (unrestricted personal key only): `listMcpKeys`,
+`getMcpKeyLimits`, `setMcpKeyLimits`, `suspendMcpKey`, `getMcpKeyAccessLog`,
+and for company owners `listEmployeeMcpKeys`, `setEmployeeMcpKeyLimits`
+(tighten only), `suspendEmployeeMcpKey`. The stdio proxy passes the same
+tools (`list_mcp_keys`, … `suspend_employee_mcp_key`) through to your agent
+unchanged.
 
 ---
 

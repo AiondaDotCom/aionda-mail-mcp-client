@@ -5,9 +5,9 @@
  * The folder key was encrypted by the folder owner for the recipient's public keys.
  */
 import { webcrypto } from 'node:crypto';
-import { hybridDecapsulate } from './hybrid-kem';
-import { fromBase64 } from './encoding';
-import type { VaultPrivateKeys } from './email-decryptor';
+import { hybridDecapsulate } from './hybrid-kem.js';
+import { fromBase64 } from './encoding.js';
+import type { VaultPrivateKeys } from './email-decryptor.js';
 
 /**
  * Decrypt the shared folder key from an incoming share.

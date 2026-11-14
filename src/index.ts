@@ -8,31 +8,39 @@
  * import { AiondaMailClient } from '@aiondadotcom/mail-mcp-client';
  *
  * const client = new AiondaMailClient({
- *     apiKey: 'tma_...',
- *     vaultKey: '...',           // optional: hex-encoded 32-byte master key
- *     vaultPrivateKeys: '...',   // optional: hex-encoded x25519+mlkem private keys
- *     endpoint: 'https://trashmail.com',
+ *     apiKey: process.env.AIONDA_MCP_KEY!,     // tmmcp_… or tma_…
+ *     vaultKey: process.env.AIONDA_VAULT_KEY!, // tmv_…
+ *     endpoint: 'https://mail.aionda.com',
  * });
  *
  * await client.connect();
- * const emails = await client.listEmails('inbox', 10);
- * const decrypted = await client.readEmailDecrypted('email-uuid');
+ * const page = await client.listEmailPage({ folder: 'inbox', after: 'start' });
+ * const decrypted = await client.readEmailDecrypted(page.emails[0].uuid);
  * await client.disconnect();
  * ```
  */
 
 // Main client
-export { AiondaMailClient } from './client';
-export type { AiondaMailClientOptions } from './client';
+export { AiondaMailClient } from './client.js';
+export { parseToolResult } from './client.js';
+export type {
+    AiondaMailClientOptions,
+    EmailPageOptions,
+    EmailPage,
+    UndecryptableEmail,
+    ReplyToEmailOptions,
+    ForwardEmailToOptions,
+} from './client.js';
+export type { DecryptedAttachmentWithEmail } from './crypto/attachment-decryptor.js';
 
 // Transport & Session
-export { McpTransport } from './transport';
-export type { TransportOptions } from './transport';
-export { McpSession } from './session';
+export { McpTransport } from './transport.js';
+export type { TransportOptions } from './transport.js';
+export { McpSession } from './session.js';
 
 // Events
-export { AiondaEventClient } from './events';
-export type { AiondaEventClientOptions } from './events';
+export { AiondaEventClient } from './events.js';
+export type { AiondaEventClientOptions } from './events.js';
 
 // Errors
 export {
@@ -42,7 +50,29 @@ export {
     McpSessionExpiredError,
     McpToolError,
     McpDecryptionError,
-} from './errors';
+    McpTransportError,
+    McpIntegrationError,
+    McpKeyUnusableError,
+    McpKeySuspendedError,
+    McpKeyRotatedError,
+    McpKeyLimitError,
+    McpSourceAddressDeniedError,
+    McpFolderNotAllowedError,
+    McpOutsideTimeWindowError,
+    McpSenderNotAllowedError,
+    McpSendLimitReachedError,
+    McpToolNotAllowedError,
+    McpIdempotencyConflictError,
+    McpCursorInvalidError,
+    McpKeyAdminError,
+    McpLimitAboveAccountError,
+    McpKeyCompanyManagedError,
+    McpLimitLoosenedError,
+    McpIntegrationErrorCodes,
+    mcpErrorFromCode,
+    mcpErrorFromJsonRpc,
+    isRetryableMcpError,
+} from './errors.js';
 
 // Constants
 export {
@@ -50,7 +80,7 @@ export {
     MCP_SERVER_NAME,
     MCP_ENDPOINT_PATH,
     SESSION_TTL_MS,
-} from './constants';
+} from './constants.js';
 
 // Types
 export type {
@@ -61,7 +91,7 @@ export type {
     McpInitializeResult,
     McpToolDefinition,
     McpToolResult,
-} from './types';
+} from './types/index.js';
 
 export type {
     ListFoldersInput, ListFoldersOutput,
@@ -92,7 +122,11 @@ export type {
     EventTopic,
     EventSubscribeInput, EventSubscribeOutput,
     GetMissedEventsInput, GetMissedEventsOutput, EncryptedEventEntry,
-} from './types';
+    OutgoingAttachment, IdempotencyOption,
+    McpKeyLimits, McpKeyInfo, ListMcpKeysOutput,
+    McpKeyAccessLogEntry, McpKeyAlert, McpKeyAccessLogOutput,
+    ListEmployeeMcpKeysOutput,
+} from './types/index.js';
 
 export type {
     EventType,
@@ -103,7 +137,7 @@ export type {
     EventSubscription,
     MissedEventsOutput,
     EventHandler,
-} from './types/events';
+} from './types/events.js';
 
 export type {
     EncryptedEmail,
@@ -111,14 +145,14 @@ export type {
     DecryptedEmail,
     DecryptedAttachmentMeta,
     DecryptedAttachment,
-} from './types/email';
+} from './types/email.js';
 
 export type {
     EncryptedFolder,
     DecryptedFolder,
-} from './types/folder';
+} from './types/folder.js';
 
-export { ErrorCodes } from './types/errors';
+export { ErrorCodes } from './types/errors.js';
 
 // Crypto (for advanced usage)
 export {
@@ -138,5 +172,5 @@ export {
     toHex,
     fromBase64,
     toBase64,
-} from './crypto';
-export type { VaultPrivateKeys } from './crypto';
+} from './crypto/index.js';
+export type { VaultPrivateKeys } from './crypto/index.js';

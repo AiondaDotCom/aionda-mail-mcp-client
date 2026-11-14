@@ -21,7 +21,7 @@
  * @company Aionda GmbH
  */
 import { webcrypto } from 'node:crypto';
-import { McpDecryptionError } from '../errors';
+import { McpDecryptionError } from '../errors.js';
 
 export const MCP_MASTER_KEY_AAD_PREFIX = 'aionda-mcp-master-key-v1:';
 export const MCP_VAULT_KEY_PREFIX = 'tmv_';

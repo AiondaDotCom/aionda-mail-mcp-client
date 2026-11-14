@@ -12,14 +12,19 @@ import { derivedEmail, incomingShare, makeVault, phpFieldHex, rnd, type Vault } 
 
 interface Sent { url: string; method: string; name?: string; args?: Record<string, unknown>; session?: string }
 
-/** Server-Attrappe: tools/call antwortet mit `{ data: handler(name, args) }`. */
+/**
+ * Server-Attrappe in der echten Serverform: tools/call antwortet mit
+ * `{ content: [{ type: 'text', text: JSON }] }`. (Bis 0.17.2 stand die
+ * Nutzlast hier in `result.data` – eine Form, die der Server nie liefert;
+ * die Methoden gaben deshalb gegen den echten Server `undefined` zurück.)
+ */
 function server(handler: (name: string, args: Record<string, unknown>) => unknown = () => ({})): Sent[] {
     const sent: Sent[] = [];
     vi.stubGlobal('fetch', vi.fn(async (url: string, init: { body: string; headers: Record<string, string> }) => {
         const req = JSON.parse(init.body);
         sent.push({ url, method: req.method, name: req.params?.name, args: req.params?.arguments, session: init.headers['Mcp-Session-Id'] });
         const result = req.method === 'tools/call'
-            ? { data: handler(req.params.name, req.params.arguments) }
+            ? { content: [{ type: 'text', text: JSON.stringify(handler(req.params.name, req.params.arguments)) }] }
             : req.method === 'tools/list' ? { tools: [{ name: 'list_emails' }] } : { protocolVersion: '2025-03-26' };
         return { status: 200, headers: new Headers({ 'Mcp-Session-Id': 'sid-1' }), json: async () => ({ jsonrpc: '2.0', id: req.id, result }) };
     }));
@@ -35,7 +40,7 @@ const keyOpts = (v: Vault) => ({
     vaultPrivateKeys: toHex(new Uint8Array([...v.privateKeys.x25519PrivateKey, ...v.privateKeys.mlKemPrivateKey])),
 });
 
-async function connected(handler?: Parameters<typeof server>[0], withKeys = false) {
+async function connected(handler?: Parameters<typeof server>[0], withKeys = false): Promise<{ client: AiondaMailClient; sent: Sent[] }> {
     const sent = server(handler);
     const client = new AiondaMailClient({ apiKey: 'tma_x', endpoint: 'https://mail.example/mcp', ...(withKeys ? keyOpts(vault) : {}) });
     await client.connect();
