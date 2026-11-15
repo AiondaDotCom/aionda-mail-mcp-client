@@ -364,14 +364,18 @@ export class AiondaMailClient {
      */
     async *iterateEmailPages(options: EmailPageOptions = {}): AsyncGenerator<EmailPage, void, undefined> {
         let after = options.after ?? 'start';
+        // Jeder Zeiger kommt in Ankunftsreihenfolge genau einmal vor. Ein schon
+        // gesehener heißt: der Server rückt nicht vor – auch im Kreis A→B→A
+        // (#4c81ed5b), nicht nur auf der Stelle.
+        const seen = new Set<string>([after]);
         for (;;) {
             const page = await this.listEmailPage({ ...options, after });
             yield page;
             if (!page.hasMore) return;
-            if (page.nextCursor === after) {
-                // Server meldet „mehr“, rückt aber nicht vor – sonst Endlosschleife.
-                throw new McpToolError('list_emails', `Cursor did not advance from ${after} although has_more is true`, -32603);
+            if (seen.has(page.nextCursor)) {
+                throw new McpToolError('list_emails', `Cursor did not advance from ${after} (next ${page.nextCursor} was already seen) although has_more is true`, -32603);
             }
+            seen.add(page.nextCursor);
             after = page.nextCursor;
         }
     }
@@ -434,15 +438,15 @@ export class AiondaMailClient {
     // ── Send/Reply/Forward ──
 
     async sendEmail(params: SendEmailInput & IdempotencyOption): Promise<SendEmailOutput> {
-        return this.tool<SendEmailOutput>('send_email', outgoingArgs(params));
+        return this.outgoingTool<SendEmailOutput>('send_email', outgoingArgs(params));
     }
 
     async replyEmail(params: ReplyEmailInput & IdempotencyOption): Promise<ReplyEmailOutput> {
-        return this.tool<ReplyEmailOutput>('reply_email', outgoingArgs(params));
+        return this.outgoingTool<ReplyEmailOutput>('reply_email', outgoingArgs(params));
     }
 
     async forwardEmail(params: ForwardEmailInput & IdempotencyOption): Promise<ForwardEmailOutput> {
-        return this.tool<ForwardEmailOutput>('forward_email', outgoingArgs(params));
+        return this.outgoingTool<ForwardEmailOutput>('forward_email', outgoingArgs(params));
     }
 
     /**
@@ -619,6 +623,25 @@ export class AiondaMailClient {
     /** Tool call with proxy semantics (encrypting/decrypting); throws typed errors. */
     private async tool<T = unknown>(name: string, args: Record<string, unknown> = {}): Promise<T> {
         return parseToolResult<T>(name, await this.callTool(name, args));
+    }
+
+    /**
+     * Versand (send/reply/forward). Ein Netzfehler ohne `idempotency_key` ist
+     * NICHT wiederholbar: die Mail kann schon draußen sein (#4c81ed5b).
+     */
+    private async outgoingTool<T>(name: string, args: Record<string, unknown>): Promise<T> {
+        try {
+            return await this.tool<T>(name, args);
+        } catch (error) {
+            if (error instanceof McpTransportError && args.idempotency_key === undefined) {
+                throw new McpTransportError(
+                    `${error.message} (${name} may already have been sent; without idempotencyKey a retry can send it twice)`,
+                    error.code,
+                    false
+                );
+            }
+            throw error;
+        }
     }
 
     /**

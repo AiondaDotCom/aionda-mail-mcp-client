@@ -255,6 +255,21 @@ describe('Zeiger-Sync (list_emails mit after)', () => {
         await expect(it.next()).rejects.toThrow(/Cursor did not advance/);
     });
 
+    it('Zeiger im Kreis (A→B→A) bricht ab statt endlos zu laufen (#4c81ed5b)', async () => {
+        const { client } = await connectedClient((name, args) => (name === 'list_emails'
+            ? { emails: [], limit: 50, has_more: true, next_cursor: args.after === 'A' ? 'B' : 'A' } : {}));
+        let seiten = 0;
+        const err = await (async () => {
+            for await (const _ of client.iterateEmailPages()) {
+                if (++seiten > 10) return 'kein Abbruch';
+            }
+            return 'Ende';
+        })().catch(e => e);
+        expect(err).toBeInstanceOf(McpToolError);
+        expect(err.message).toMatch(/already seen/);
+        expect(seiten).toBe(3);
+    });
+
     it('unbekannter Zeiger (202) wird McpCursorInvalidError', async () => {
         const { client } = await connectedClient((name) => (name === 'list_emails'
             ? toolError(202, 'Cursor "x" is unknown for this mailbox (the email no longer exists). Start again with after="start"; deliveries are deduplicated by email uuid on your side.')
@@ -355,6 +370,31 @@ describe('Lesen, Anhänge, Verschieben', () => {
 });
 
 describe('Versand: Idempotenz, Anhänge, Antworten', () => {
+    it('Netzfehler beim Versand: nur mit idempotencyKey wiederholbar (#4c81ed5b)', async () => {
+        const { client } = await connectedClient();
+        vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('fetch failed'); }));
+        const base = { from_identity: 'personal@example.com', to: 'a@example.com', subject: 's', body: 'b', lang: 'de' };
+
+        const ohne = await client.sendEmail(base).catch(e => e);
+        expect(ohne).toBeInstanceOf(McpTransportError);
+        expect(ohne.retryable).toBe(false);
+        expect(isRetryableMcpError(ohne)).toBe(false);
+        expect(ohne.message).toMatch(/may already have been sent/);
+
+        const mit = await client.sendEmail({ ...base, idempotencyKey: 'feldwerk-job-43' }).catch(e => e);
+        expect(mit).toBeInstanceOf(McpTransportError);
+        expect(isRetryableMcpError(mit)).toBe(true);
+
+        for (const aufruf of [
+            () => client.replyEmail({ email_uuid: 'u', body: 'b', original_from: 'x@example.com', original_subject: 's', lang: 'de' }),
+            () => client.forwardEmail({ email_uuid: 'u', to: 'a@example.com', original_subject: 's', original_body: 'b', lang: 'de' }),
+        ]) {
+            expect(isRetryableMcpError(await aufruf().catch(e => e))).toBe(false);
+        }
+        // Lesen bleibt wiederholbar.
+        expect(isRetryableMcpError(await client.listEmails('inbox').catch(e => e))).toBe(true);
+    });
+
     it('sendEmail: idempotencyKey wird idempotency_key; Bytes-Anhang geht als Base64 durch den Proxy', async () => {
         const { client, calls } = await connectedClient((name) => (name === 'send_email'
             ? { message_id: '<1@aionda.com>', sent: true, idempotent_replay: true } : {}));
