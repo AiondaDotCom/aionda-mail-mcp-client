@@ -363,7 +363,9 @@ call later can succeed.
 `McpKeyUnusableError`; the limit errors 195–200 share `McpKeyLimitError`;
 204–206 share `McpKeyAdminError`. A suspended or rotated key already fails
 in `connect()`. Timeouts and network errors are `McpTransportError`
-(retryable – for sends only with an `idempotencyKey`).
+(retryable; for `sendEmail`/`replyEmail`/`forwardEmail` without an
+`idempotencyKey` `retryable` is `false`, because the mail may already be out
+and a retry could send it twice).
 
 **Key management from code** (unrestricted personal key only): `listMcpKeys`,
 `getMcpKeyLimits`, `setMcpKeyLimits`, `suspendMcpKey`, `getMcpKeyAccessLog`,

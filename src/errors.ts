@@ -316,20 +316,31 @@ export function mcpErrorFromJsonRpc(
  * Darf ein Aufrufer denselben Aufruf später wiederholen?
  *
  * true: Ratenbegrenzung, Versandgrenze (199), Idempotenz „in Arbeit“ (201),
- *       Zeitüberschreitung/Netzfehler des Transports.
+ *       Zeitüberschreitung/Netzfehler des Transports – bei einem Versand
+ *       (send/reply/forward) nur mit `idempotencyKey`.
  * false: alles andere, insbesondere gesperrte/abgelöste Schlüssel.
  */
 export function isRetryableMcpError(error: unknown): boolean {
     if (error instanceof McpIntegrationError) return error.retryable;
     if (error instanceof McpRateLimitError) return true;
-    if (error instanceof McpTransportError) return true;
+    if (error instanceof McpTransportError) return error.retryable;
     return false;
 }
 
-/** Zeitüberschreitung oder Netzfehler – der Server hat (vielleicht) nie geantwortet. */
+/**
+ * Zeitüberschreitung oder Netzfehler – der Server hat (vielleicht) nie geantwortet.
+ *
+ * `retryable` ist false, wenn der Aufruf einen Versand auslöste
+ * (send/reply/forward) und KEIN `idempotencyKey` dabei war: Ob die Mail schon
+ * draußen ist, weiß dann niemand, und ein zweiter Versuch kann sie doppelt
+ * senden. Mit `idempotencyKey` ist das Wiederholen sicher (#4c81ed5b).
+ */
 export class McpTransportError extends McpError {
-    constructor(message: string, code = -32603) {
+    public readonly retryable: boolean;
+
+    constructor(message: string, code = -32603, retryable = true) {
         super(message, code);
         this.name = 'McpTransportError';
+        this.retryable = retryable;
     }
 }
